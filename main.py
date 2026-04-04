@@ -30,16 +30,35 @@ def velocity_to_volume(velocity, scale=0.5):
 
 
 def make_key(note, velocity):
-    freq     = midi_to_freq(note)
-    volume   = velocity_to_volume(velocity, scale=0.5)
-    n        = int(SAMPLE_RATE * 1.2)
-    t        = np.linspace(0, 1.2, n, False)
-    wave     = np.sin(2 * np.pi * freq * t)
-    attack   = int(0.01 * SAMPLE_RATE)
-    release  = int(0.40 * SAMPLE_RATE)
-    env      = np.ones(n)
-    env[:attack]   = np.linspace(0, 1, attack)
-    env[-release:] = np.linspace(1, 0, release)
+    freq       = midi_to_freq(note)
+    volume     = velocity_to_volume(velocity, scale=0.4)
+    brightness = 0.3 + 0.7 * (velocity / 127)  # harder hit = more harmonics
+
+    # Higher notes decay faster (like a real piano)
+    decay_rate = 1.0 + max(0, note - 48) * 0.04
+    duration   = max(0.8, 3.0 / decay_rate)
+    n          = int(SAMPLE_RATE * duration)
+    t          = np.linspace(0, duration, n, False)
+
+    # Fundamental + harmonics — this is what makes it sound like a piano
+    harmonics = [
+        (1.0,              1.0),
+        (0.50 * brightness, 2.0),
+        (0.25 * brightness, 3.0),
+        (0.12 * brightness, 4.0),
+        (0.06 * brightness, 5.0),
+        (0.03 * brightness, 6.0),
+    ]
+    wave = sum(amp * np.sin(2 * np.pi * freq * h * t) for amp, h in harmonics)
+    wave /= sum(amp for amp, _ in harmonics)  # normalize
+
+    # Two-stage decay: quick initial drop then slow tail (piano-style)
+    env = 0.4 * np.exp(-decay_rate * 6 * t) + 0.6 * np.exp(-decay_rate * 1.2 * t)
+
+    # Sharp 5ms attack
+    attack = int(0.005 * SAMPLE_RATE)
+    env[:attack] = np.linspace(0, env[attack], attack)
+
     return (wave * env * volume).astype(np.float32)
 
 
