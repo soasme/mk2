@@ -1,78 +1,171 @@
 """
-main.py — listens to LaunchKey Mini MK2 and plays sounds.
-
-Keys  (channel 9):  piano-style sine tone at the correct pitch
-Pads  (channel 10): percussive noise burst tuned to the pad's note
+main.py — LaunchKey Mini MK2 synthesizer.
+Loads config.toml for MIDI routing and sound configuration.
 """
 import threading
+import tomllib
+import pathlib
 import mido
 import numpy as np
 import sounddevice as sd
 
 SAMPLE_RATE = 44100
-MIDI_PORT   = 'Launchkey Mini LK Mini MIDI'
-
-CH_KEYS = 0   # channel 1  (0-indexed) — in InControl mode
-CH_PADS = 9   # channel 10 (0-indexed)
+CONFIG_PATH = pathlib.Path(__file__).parent / 'config.toml'
 
 # Mixer: list of [samples, position] — written by main thread, read by audio callback
 _active = []
 _lock   = threading.Lock()
 
 
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def load_config():
+    with open(CONFIG_PATH, 'rb') as f:
+        return tomllib.load(f)
+
+
 def midi_to_freq(note):
     return 440.0 * (2.0 ** ((note - 69) / 12.0))
 
 
-def velocity_to_volume(velocity, scale=0.5):
-    # Square-root curve: audible even at low velocities (keys often send 1–10)
+def velocity_to_volume(velocity, scale):
+    # Square-root curve: audible even at low velocities
     return (velocity / 127) ** 0.5 * scale
 
 
-def make_key(note, velocity):
-    freq       = midi_to_freq(note)
-    volume     = velocity_to_volume(velocity, scale=0.4)
-    brightness = 0.3 + 0.7 * (velocity / 127)  # harder hit = more harmonics
+# ---------------------------------------------------------------------------
+# Sound generators
+# ---------------------------------------------------------------------------
 
-    # Higher notes decay faster (like a real piano)
+def make_piano(note, velocity, cfg):
+    freq       = midi_to_freq(note)
+    volume     = velocity_to_volume(velocity, cfg.get('volume', 0.4))
+    brightness = 0.3 + 0.7 * (velocity / 127)
+
     decay_rate = 1.0 + max(0, note - 48) * 0.04
     duration   = max(0.8, 3.0 / decay_rate)
     n          = int(SAMPLE_RATE * duration)
     t          = np.linspace(0, duration, n, False)
 
-    # Fundamental + harmonics — this is what makes it sound like a piano
-    harmonics = [
-        (1.0,              1.0),
-        (0.50 * brightness, 2.0),
-        (0.25 * brightness, 3.0),
-        (0.12 * brightness, 4.0),
-        (0.06 * brightness, 5.0),
-        (0.03 * brightness, 6.0),
-    ]
-    wave = sum(amp * np.sin(2 * np.pi * freq * h * t) for amp, h in harmonics)
-    wave /= sum(amp for amp, _ in harmonics)  # normalize
+    base = cfg.get('harmonics', [1.0, 0.50, 0.25, 0.12, 0.06, 0.03])
+    amps = [base[0]] + [a * brightness for a in base[1:]]
+    wave = sum(a * np.sin(2 * np.pi * freq * (i + 1) * t) for i, a in enumerate(amps))
+    wave /= sum(amps)
 
-    # Two-stage decay: quick initial drop then slow tail (piano-style)
-    env = 0.4 * np.exp(-decay_rate * 6 * t) + 0.6 * np.exp(-decay_rate * 1.2 * t)
+    df   = cfg.get('decay_fast', 6.0)
+    ds   = cfg.get('decay_slow', 1.2)
+    env  = 0.4 * np.exp(-decay_rate * df * t) + 0.6 * np.exp(-decay_rate * ds * t)
 
-    # Sharp 5ms attack
-    attack = int(0.005 * SAMPLE_RATE)
-    env[:attack] = np.linspace(0, env[attack], attack)
+    atk = int(cfg.get('attack_ms', 5) / 1000 * SAMPLE_RATE)
+    env[:atk] = np.linspace(0, env[atk], atk)
 
     return (wave * env * volume).astype(np.float32)
 
 
-def make_pad(note, velocity):
-    freq    = midi_to_freq(note)
-    volume  = velocity_to_volume(velocity, scale=0.6)
-    n       = int(SAMPLE_RATE * 0.25)
-    t       = np.linspace(0, 0.25, n, False)
-    tone    = np.sin(2 * np.pi * freq * t)
-    noise   = np.random.default_rng().standard_normal(n)
-    wave    = tone * 0.4 + noise * 0.6
-    decay   = np.exp(-18 * t)
+def make_guitar(note, velocity, cfg):
+    """Karplus-Strong plucked string synthesis."""
+    freq     = midi_to_freq(note)
+    volume   = velocity_to_volume(velocity, cfg.get('volume', 0.5))
+    duration = cfg.get('duration', 2.5)
+    decay    = cfg.get('decay', 0.996)
+    n        = int(SAMPLE_RATE * duration)
+
+    buf_size = max(1, int(SAMPLE_RATE / freq))
+    buf      = np.random.uniform(-1.0, 1.0, buf_size).astype(np.float32)
+    output   = np.zeros(n, dtype=np.float32)
+
+    for i in range(n):
+        idx          = i % buf_size
+        next_idx     = (i + 1) % buf_size
+        output[i]    = buf[idx]
+        buf[idx]     = decay * 0.5 * (buf[idx] + buf[next_idx])
+
+    fade = int(0.05 * SAMPLE_RATE)
+    output[-fade:] *= np.linspace(1, 0, fade)
+
+    return (output * volume).astype(np.float32)
+
+
+def make_organ(note, velocity, cfg):
+    freq     = midi_to_freq(note)
+    volume   = velocity_to_volume(velocity, cfg.get('volume', 0.3))
+    duration = cfg.get('duration', 1.5)
+    n        = int(SAMPLE_RATE * duration)
+    t        = np.linspace(0, duration, n, False)
+
+    harmonics = cfg.get('harmonics', [1.0, 0.50, 0.33, 0.25, 0.20])
+    wave      = sum(a * np.sin(2 * np.pi * freq * (i + 1) * t) for i, a in enumerate(harmonics))
+    wave     /= sum(harmonics)
+
+    atk = int(cfg.get('attack_ms', 15) / 1000 * SAMPLE_RATE)
+    rel = int(cfg.get('release_ms', 50) / 1000 * SAMPLE_RATE)
+    env = np.ones(n)
+    env[:atk]  = np.linspace(0, 1, atk)
+    env[-rel:] = np.linspace(1, 0, rel)
+
+    return (wave * env * volume).astype(np.float32)
+
+
+def make_drums(note, velocity, cfg):
+    freq     = midi_to_freq(note)
+    volume   = velocity_to_volume(velocity, cfg.get('volume', 0.6))
+    duration = cfg.get('duration', 0.25)
+    n        = int(SAMPLE_RATE * duration)
+    t        = np.linspace(0, duration, n, False)
+
+    tone_mix = cfg.get('tone_mix', 0.4)
+    tone     = np.sin(2 * np.pi * freq * t)
+    noise    = np.random.default_rng().standard_normal(n)
+    wave     = tone * tone_mix + noise * (1.0 - tone_mix)
+
+    decay = np.exp(-cfg.get('decay_rate', 18.0) * t)
+
     return (wave * decay * volume).astype(np.float32)
 
+
+def make_bells(note, velocity, cfg):
+    freq     = midi_to_freq(note)
+    volume   = velocity_to_volume(velocity, cfg.get('volume', 0.4))
+    duration = cfg.get('duration', 2.5)
+    n        = int(SAMPLE_RATE * duration)
+    t        = np.linspace(0, duration, n, False)
+
+    # Slightly inharmonic partials give bell character
+    amps   = cfg.get('harmonics', [1.0, 0.25, 0.06])
+    ratios = [1.0, 2.76, 5.40]
+    wave   = sum(a * np.sin(2 * np.pi * freq * r * t) for a, r in zip(amps, ratios))
+    wave  /= sum(amps)
+
+    env     = np.exp(-cfg.get('decay_rate', 0.8) * t)
+    atk     = int(cfg.get('attack_ms', 2) / 1000 * SAMPLE_RATE)
+    env[:atk] = np.linspace(0, 1, atk)
+
+    return (wave * env * volume).astype(np.float32)
+
+
+SOUND_MAKERS = {
+    'piano':  make_piano,
+    'guitar': make_guitar,
+    'organ':  make_organ,
+    'drums':  make_drums,
+    'bells':  make_bells,
+}
+
+
+def make_sound(note, velocity, sound_name, sounds_cfg):
+    cfg    = sounds_cfg.get(sound_name, {})
+    stype  = cfg.get('type', sound_name)
+    maker  = SOUND_MAKERS.get(stype)
+    if maker is None:
+        return None
+    return maker(note, velocity, cfg)
+
+
+# ---------------------------------------------------------------------------
+# Audio mixer
+# ---------------------------------------------------------------------------
 
 def audio_callback(outdata, frames, time, status):
     result = np.zeros(frames, dtype=np.float32)
@@ -89,30 +182,52 @@ def audio_callback(outdata, frames, time, status):
     outdata[:] = result.reshape(-1, 1)
 
 
-def dispatch(msg):
+# ---------------------------------------------------------------------------
+# MIDI dispatch
+# ---------------------------------------------------------------------------
+
+def dispatch(msg, ch_keys, ch_pads, keys_sound, pads_sound, sounds_cfg):
     if msg.type != 'note_on' or msg.velocity == 0:
         return
-    if msg.channel == CH_KEYS:
-        samples = make_key(msg.note, msg.velocity)
-    elif msg.channel == CH_PADS:
-        samples = make_pad(msg.note, msg.velocity)
+    if msg.channel == ch_keys:
+        samples = make_sound(msg.note, msg.velocity, keys_sound, sounds_cfg)
+    elif msg.channel == ch_pads:
+        samples = make_sound(msg.note, msg.velocity, pads_sound, sounds_cfg)
     else:
         return
-    with _lock:
-        _active.append([samples, 0])
+    if samples is not None:
+        with _lock:
+            _active.append([samples, 0])
 
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
 
 def main():
-    print(f"Listening on: {MIDI_PORT}")
-    print("Keys → piano tone  |  Pads → drum hit  |  Ctrl-C to quit\n")
+    cfg        = load_config()
+    midi_cfg   = cfg.get('midi', {})
+    track_cfg  = cfg.get('track', {})
+    sounds_cfg = cfg.get('sounds', {})
+
+    port        = midi_cfg.get('port', 'Launchkey Mini LK Mini MIDI')
+    ch_keys     = midi_cfg.get('channel_keys', 0)
+    ch_pads     = midi_cfg.get('channel_pads', 9)
+    keys_sound  = track_cfg.get('keys', 'piano')
+    pads_sound  = track_cfg.get('pads', 'drums')
+
+    print(f"Listening on : {port}")
+    print(f"Keys sound   : {keys_sound}")
+    print(f"Pads sound   : {pads_sound}")
+    print("Ctrl-C to quit\n")
 
     try:
         with sd.OutputStream(samplerate=SAMPLE_RATE, channels=1,
                              dtype='float32', blocksize=512,
                              callback=audio_callback):
-            with mido.open_input(MIDI_PORT) as inport:
+            with mido.open_input(port) as inport:
                 for msg in inport:
-                    dispatch(msg)
+                    dispatch(msg, ch_keys, ch_pads, keys_sound, pads_sound, sounds_cfg)
     except KeyboardInterrupt:
         print("Goodbye!")
 
