@@ -12,7 +12,7 @@ import sounddevice as sd
 SAMPLE_RATE = 44100
 MIDI_PORT   = 'Launchkey Mini LK Mini MIDI'
 
-CH_KEYS = 8   # channel 9  (0-indexed)
+CH_KEYS = 0   # channel 1  (0-indexed) — in InControl mode
 CH_PADS = 9   # channel 10 (0-indexed)
 
 # Mixer: list of [samples, position] — written by main thread, read by audio callback
