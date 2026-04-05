@@ -1,6 +1,6 @@
 """Unit tests for loop play mode — SequencerState, LED helpers, dispatch."""
 import threading
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
 import mido
 import pytest

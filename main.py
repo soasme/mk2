@@ -26,6 +26,7 @@ class SequencerState:
 seq       = SequencerState()
 _stop_seq = threading.Event()
 _stop_seq.set()   # set = sequencer not running
+_seq_thread: threading.Thread | None = None
 
 # Mixer: list of [samples, position] — written by main thread, read by audio callback
 _active = []
@@ -65,7 +66,7 @@ def sequencer_loop(seq, outport, loop_cfg, pads_sound, sounds_cfg):
 
     Runs in a daemon thread. Exits when _stop_seq is set.
     """
-    bpm      = loop_cfg.get('bpm', 120)
+    bpm      = loop_cfg.get('bpm', 120)   # captured once; BPM changes require mode re-entry
     interval = 60.0 / (bpm * 4)      # seconds per 1/16 note
     pad_notes = loop_cfg.get('pad_notes', [])
 
@@ -269,6 +270,7 @@ def dispatch(msg, ch_keys, ch_pads, keys_sound, pads_sound, sounds_cfg,
                 entering = seq.loop_mode
                 if entering:
                     seq.current_step = 0
+            global _seq_thread
             if entering:
                 _stop_seq.clear()
                 t = threading.Thread(
@@ -277,8 +279,12 @@ def dispatch(msg, ch_keys, ch_pads, keys_sound, pads_sound, sounds_cfg,
                     daemon=True,
                 )
                 t.start()
+                _seq_thread = t
             else:
                 _stop_seq.set()
+                if _seq_thread is not None:
+                    _seq_thread.join(timeout=0.5)
+                    _seq_thread = None
                 clear_pad_leds(outport, loop_cfg.get('pad_notes', []))
         return
 

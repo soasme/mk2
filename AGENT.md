@@ -54,6 +54,8 @@ LaunchKey Mini MK2 InControl port  ←── set_pad_leds() / clear_pad_leds()
 | `config.toml`      | Runtime configuration — MIDI ports, active track, sound presets |
 | `CONFIGURATION.md` | Reference for every config.toml option |
 | `AGENT.md`         | This file |
+| `tests/test_loop.py` | Unit tests for loop play mode (SequencerState, LED helpers, dispatch routing) |
+| `pyproject.toml`     | Project metadata and dev dependencies (pytest) |
 
 ## Concurrency Model
 
