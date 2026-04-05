@@ -303,6 +303,7 @@ def main():
                              callback=audio_callback):
             with mido.open_input(port) as inport:
                 for msg in inport:
+                    # outport and loop_cfg are wired in Task 8; NameError here until then
                     dispatch(msg, ch_keys, ch_pads, keys_sound, pads_sound, sounds_cfg,
                              seq, outport, loop_cfg)
     except KeyboardInterrupt:

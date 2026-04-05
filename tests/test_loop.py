@@ -133,6 +133,7 @@ def test_cc108_press_enters_loop_mode():
     assert seq.loop_mode is True
     assert seq.current_step == 0
     mock_thread_cls.return_value.start.assert_called_once()
+    assert not m._stop_seq.is_set()  # event must be cleared so sequencer thread runs
 
 
 def test_cc108_press_exits_loop_mode():
@@ -140,6 +141,7 @@ def test_cc108_press_exits_loop_mode():
     seq.loop_mode = True
     _dispatch_cc(value=127, seq=seq)
     assert seq.loop_mode is False
+    assert m._stop_seq.is_set()  # event must be set to signal thread to stop
 
 
 def test_cc108_release_ignored():
