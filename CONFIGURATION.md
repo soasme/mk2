@@ -7,6 +7,7 @@ MIDI device and channel routing.
 | Key            | Type   | Default                           | Description |
 |----------------|--------|-----------------------------------|-------------|
 | `port`         | string | `"Launchkey Mini LK Mini MIDI"`   | Exact MIDI input port name. Run `python3 -c "import mido; print(mido.get_input_names())"` to list available ports. |
+| `port_out`     | string | `"Launchkey Mini LK Mini InControl"` | MIDI output port for pad LED control. Run `python3 -c "import mido; print(mido.get_output_names())"` to list available ports. |
 | `channel_keys` | int    | `0`                               | MIDI channel (0-indexed) used by keyboard keys. `0` = ch1 (InControl mode). `8` = ch9 (normal mode). |
 | `channel_pads` | int    | `9`                               | MIDI channel (0-indexed) used by pads. Always `9` (ch10) on the LaunchKey Mini MK2. |
 
@@ -167,14 +168,6 @@ duration   = 0.2
 
 ---
 
-## `[midi] port_out`
-
-| Key        | Type   | Default                                  | Description |
-|------------|--------|------------------------------------------|-------------|
-| `port_out` | string | `"Launchkey Mini LK Mini InControl"`     | MIDI output port for pad LED control. Run `python3 -c "import mido; print(mido.get_output_names())"` to list available ports. |
-
----
-
 ## `[loop]`
 
 Step sequencer configuration. Active when loop play mode is enabled (press the top play button).
@@ -182,12 +175,12 @@ Step sequencer configuration. Active when loop play mode is enabled (press the t
 | Key           | Type         | Default | Description |
 |---------------|--------------|---------|-------------|
 | `bpm`         | int          | `120`   | Tempo in beats per minute. Determines 1/16-note interval. |
-| `pad_notes`   | array[int]   | see below | MIDI note numbers the 16 pads send, ordered left-to-right, top row first. |
+| `pad_notes`   | array[int]   | `[]` | MIDI note numbers the 16 pads send, ordered left-to-right, top row first. |
 | `led_playhead`| int          | `12`    | LED velocity for the current playhead step (green on MK2). |
 | `led_active`  | int          | `15`    | LED velocity for active (on) steps that are not the playhead (orange on MK2). |
 | `led_off`     | int          | `0`     | LED velocity for inactive steps (off). |
 
-**Default `pad_notes`:**
+**Recommended `pad_notes` for LaunchKey Mini MK2:**
 ```toml
 pad_notes = [40, 41, 42, 43, 44, 45, 46, 47,
              48, 49, 50, 51, 52, 53, 54, 55]
@@ -196,3 +189,5 @@ Top row left→right: 40–47. Bottom row left→right: 48–55. Adjust if your 
 
 **LED colour encoding (LaunchKey Mini MK2 bi-color):**
 Velocity bits `[3:2]` = green level, bits `[1:0]` = red level (each 0–3). `12` = full green, `15` = orange, `3` = full red, `0` = off.
+
+---
