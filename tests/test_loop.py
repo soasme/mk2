@@ -216,3 +216,22 @@ def test_pad_press_unknown_note_ignored():
     """A pad note not in pad_notes list must not crash or change any step."""
     seq, _ = _pad_press(note=99)   # not in LOOP_CFG['pad_notes']
     assert seq.steps == [False] * 16
+
+
+def test_pad_note_off_in_loop_mode_does_not_toggle():
+    """note_off (velocity=0) in loop mode must not toggle the step."""
+    seq = fresh_seq()
+    seq.loop_mode = True
+    outport = MockPort()
+    # note_on turns step on
+    msg_on = mido.Message('note_on', channel=9, note=40, velocity=100)
+    m.dispatch(msg_on, ch_keys=0, ch_pads=9,
+               keys_sound='piano', pads_sound='drums', sounds_cfg={},
+               seq=seq, outport=outport, loop_cfg=LOOP_CFG)
+    assert seq.steps[0] is True
+    # note_off must not toggle it back off
+    msg_off = mido.Message('note_on', channel=9, note=40, velocity=0)
+    m.dispatch(msg_off, ch_keys=0, ch_pads=9,
+               keys_sound='piano', pads_sound='drums', sounds_cfg={},
+               seq=seq, outport=outport, loop_cfg=LOOP_CFG)
+    assert seq.steps[0] is True   # still on — note_off was ignored

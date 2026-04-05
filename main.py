@@ -266,6 +266,8 @@ def dispatch(msg, ch_keys, ch_pads, keys_sound, pads_sound, sounds_cfg,
         in_loop = seq.loop_mode
 
     if in_loop:
+        if msg.type != 'note_on' or msg.velocity == 0:
+            return
         if msg.channel == ch_pads:
             pad_notes = loop_cfg.get('pad_notes', [])
             if msg.note in pad_notes:
