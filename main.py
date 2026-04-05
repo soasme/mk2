@@ -33,6 +33,31 @@ _lock   = threading.Lock()
 
 
 # ---------------------------------------------------------------------------
+# LED helpers
+# ---------------------------------------------------------------------------
+
+def set_pad_leds(outport, steps, current_step, pad_notes, loop_cfg):
+    """Send a note_on to the InControl port for every pad to update colours."""
+    playhead_vel = loop_cfg.get('led_playhead', 12)
+    active_vel   = loop_cfg.get('led_active',   15)
+    off_vel      = loop_cfg.get('led_off',        0)
+    for i, note in enumerate(pad_notes):
+        if i == current_step:
+            vel = playhead_vel
+        elif steps[i]:
+            vel = active_vel
+        else:
+            vel = off_vel
+        outport.send(mido.Message('note_on', channel=0, note=note, velocity=vel))
+
+
+def clear_pad_leds(outport, pad_notes):
+    """Turn off all pad LEDs."""
+    for note in pad_notes:
+        outport.send(mido.Message('note_on', channel=0, note=note, velocity=0))
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
