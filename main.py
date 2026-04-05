@@ -38,6 +38,9 @@ _lock   = threading.Lock()
 
 def set_pad_leds(outport, steps, current_step, pad_notes, loop_cfg):
     """Send a note_on to the InControl port for every pad to update colours."""
+    assert len(steps) >= len(pad_notes), (
+        f"steps has {len(steps)} entries but pad_notes has {len(pad_notes)}"
+    )
     playhead_vel = loop_cfg.get('led_playhead', 12)
     active_vel   = loop_cfg.get('led_active',   15)
     off_vel      = loop_cfg.get('led_off',        0)

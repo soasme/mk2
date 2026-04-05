@@ -96,3 +96,14 @@ def test_clear_pad_leds_sends_velocity_zero():
     m.clear_pad_leds(outport, LOOP_CFG['pad_notes'])
     assert len(outport.sent) == 16
     assert all(msg.velocity == 0 for msg in outport.sent)
+
+
+def test_set_pad_leds_playhead_overrides_active():
+    """When current_step is also an active step, playhead color wins."""
+    outport = MockPort()
+    steps = [False] * 16
+    steps[0] = True  # pad 0 is both active and the current_step
+    m.set_pad_leds(outport, steps, current_step=0,
+                   pad_notes=LOOP_CFG['pad_notes'], loop_cfg=LOOP_CFG)
+    msg = next(msg for msg in outport.sent if msg.note == 40)
+    assert msg.velocity == 12  # led_playhead, not led_active
