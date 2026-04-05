@@ -11,15 +11,20 @@ All sound and routing behaviour is controlled by `config.toml`.
 ```
 LaunchKey Mini MK2 (USB)
         │
-        │  MIDI Note On / Note Off
+        │  MIDI Note On / CC
         ▼
    mido.open_input()          — blocking iterator on main thread
         │
         ▼
-     dispatch()               — routes message by MIDI channel
+     dispatch()               — routes message by mode and MIDI channel
         │
-        ├─ channel_keys → make_sound(keys_sound, …)
-        └─ channel_pads → make_sound(pads_sound, …)
+        ├─ CC 108 ch0 value=127  → toggle loop_mode (start/stop SequencerThread)
+        │
+        ├─ [loop mode] ch_pads  → toggle step on/off, update pad LED via InControl port
+        ├─ [loop mode] ch_keys  → set seq.loop_note (no audio)
+        │
+        ├─ [normal] channel_keys → make_sound(keys_sound, …)
+        └─ [normal] channel_pads → make_sound(pads_sound, …)
                 │
                 ▼
         sound generator        — numpy synthesis, returns float32 buffer
@@ -32,6 +37,13 @@ LaunchKey Mini MK2 (USB)
                 │              sums all active buffers, clips to [-1, 1]
                 ▼
         System Audio Out
+
+
+LaunchKey Mini MK2 InControl port  ←── set_pad_leds() / clear_pad_leds()
+        ↑                                        ↑
+        └────────────── SequencerThread ─────────┘
+                        (sequencer_loop, daemon thread)
+                        advances step every 1/16 note @ BPM
 ```
 
 ## File Map
@@ -47,10 +59,11 @@ LaunchKey Mini MK2 (USB)
 
 | Thread | Responsibility |
 |--------|---------------|
-| Main thread | Reads MIDI messages, generates sound buffers, appends to `_active` |
+| Main thread | Reads MIDI messages, generates sound buffers on normal note-on, toggles loop mode on CC 108, updates `_active` |
+| Sequencer thread | Advances playhead every 1/16 note, triggers sounds for active steps, updates pad LEDs via InControl port |
 | sounddevice thread | Runs `audio_callback` per audio block, consumes `_active` |
 
-`_active` is a plain list protected by `threading.Lock`. The main thread appends; the callback reads and advances positions, dropping exhausted entries. No other synchronisation is needed.
+`_active` and all `SequencerState` fields are protected by `threading.Lock`. `_stop_seq` (`threading.Event`) signals the sequencer thread to exit cleanly.
 
 ## Sound Engines
 
