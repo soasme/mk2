@@ -235,3 +235,32 @@ def test_pad_note_off_in_loop_mode_does_not_toggle():
                keys_sound='piano', pads_sound='drums', sounds_cfg={},
                seq=seq, outport=outport, loop_cfg=LOOP_CFG)
     assert seq.steps[0] is True   # still on — note_off was ignored
+
+
+# ---------------------------------------------------------------------------
+# dispatch — key press in loop mode
+# ---------------------------------------------------------------------------
+
+def test_key_press_sets_loop_note():
+    seq = fresh_seq()
+    seq.loop_mode = True
+    outport = MockPort()
+    msg = mido.Message('note_on', channel=0, note=65, velocity=80)
+    m.dispatch(msg, ch_keys=0, ch_pads=9,
+               keys_sound='piano', pads_sound='drums', sounds_cfg={},
+               seq=seq, outport=outport, loop_cfg=LOOP_CFG)
+    assert seq.loop_note == 65
+
+
+def test_key_press_in_loop_mode_does_not_play_audio():
+    with _lock:
+        m._active.clear()
+    seq = fresh_seq()
+    seq.loop_mode = True
+    outport = MockPort()
+    msg = mido.Message('note_on', channel=0, note=65, velocity=80)
+    m.dispatch(msg, ch_keys=0, ch_pads=9,
+               keys_sound='piano', pads_sound='drums', sounds_cfg={},
+               seq=seq, outport=outport, loop_cfg=LOOP_CFG)
+    with _lock:
+        assert m._active == []
