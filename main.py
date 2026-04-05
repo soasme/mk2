@@ -61,8 +61,31 @@ def clear_pad_leds(outport, pad_notes):
 
 
 def sequencer_loop(seq, outport, loop_cfg, pads_sound, sounds_cfg):
-    """Step sequencer thread — implemented in full in Task 7."""
-    pass
+    """Advance the step sequencer at 1/16-note intervals.
+
+    Runs in a daemon thread. Exits when _stop_seq is set.
+    """
+    bpm      = loop_cfg.get('bpm', 120)
+    interval = 60.0 / (bpm * 4)      # seconds per 1/16 note
+    pad_notes = loop_cfg.get('pad_notes', [])
+
+    while not _stop_seq.wait(timeout=interval):
+        with _lock:
+            step   = seq.current_step
+            active = seq.steps[step]
+            note   = seq.loop_note
+            steps_snapshot = list(seq.steps)
+
+        if active:
+            samples = make_sound(note, 100, pads_sound, sounds_cfg)
+            if samples is not None:
+                with _lock:
+                    _active.append([samples, 0])
+
+        set_pad_leds(outport, steps_snapshot, step, pad_notes, loop_cfg)
+
+        with _lock:
+            seq.current_step = (step + 1) % 16
 
 
 # ---------------------------------------------------------------------------
