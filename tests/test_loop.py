@@ -6,6 +6,7 @@ import mido
 import pytest
 
 import main as m
+from main import _lock
 
 
 # ---------------------------------------------------------------------------
@@ -157,3 +158,61 @@ def test_cc108_exit_clears_leds():
     _, outport, _ = _dispatch_cc(value=127, seq=seq)
     assert len(outport.sent) == 16
     assert all(msg.velocity == 0 for msg in outport.sent)
+
+
+# ---------------------------------------------------------------------------
+# dispatch — pad press in loop mode
+# ---------------------------------------------------------------------------
+
+def _pad_press(note, seq=None, outport=None):
+    """Helper: send a pad note_on while in loop mode."""
+    if seq is None:
+        seq = fresh_seq()
+        seq.loop_mode = True
+    if outport is None:
+        outport = MockPort()
+    msg = mido.Message('note_on', channel=9, note=note, velocity=100)
+    m.dispatch(msg, ch_keys=0, ch_pads=9,
+               keys_sound='piano', pads_sound='drums', sounds_cfg={},
+               seq=seq, outport=outport, loop_cfg=LOOP_CFG)
+    return seq, outport
+
+
+def test_pad_press_toggles_step_on():
+    seq, _ = _pad_press(note=40)   # pad 0 (first in pad_notes)
+    assert seq.steps[0] is True
+
+
+def test_pad_press_toggles_step_off():
+    seq, _ = _pad_press(note=40)   # on
+    _pad_press(note=40, seq=seq)   # off
+    assert seq.steps[0] is False
+
+
+def test_pad_press_sends_orange_led_when_on():
+    _, outport = _pad_press(note=40)
+    msg = next(msg for msg in outport.sent if msg.note == 40)
+    assert msg.velocity == 15      # led_active (orange)
+
+
+def test_pad_press_sends_off_led_when_toggled_off():
+    seq, outport = _pad_press(note=40)   # on
+    outport.sent.clear()
+    _pad_press(note=40, seq=seq, outport=outport)   # off
+    msg = next(msg for msg in outport.sent if msg.note == 40)
+    assert msg.velocity == 0       # led_off
+
+
+def test_pad_press_in_loop_mode_does_not_play_audio():
+    """No audio buffers should be added when toggling a step."""
+    with _lock:
+        m._active.clear()
+    _pad_press(note=40)
+    with _lock:
+        assert m._active == []
+
+
+def test_pad_press_unknown_note_ignored():
+    """A pad note not in pad_notes list must not crash or change any step."""
+    seq, _ = _pad_press(note=99)   # not in LOOP_CFG['pad_notes']
+    assert seq.steps == [False] * 16

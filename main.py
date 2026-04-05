@@ -259,6 +259,29 @@ def dispatch(msg, ch_keys, ch_pads, keys_sound, pads_sound, sounds_cfg,
                 clear_pad_leds(outport, loop_cfg.get('pad_notes', []))
         return
 
+    # -----------------------------------------------------------------------
+    # Loop mode — pad toggles step; key sets note
+    # -----------------------------------------------------------------------
+    with _lock:
+        in_loop = seq.loop_mode
+
+    if in_loop:
+        if msg.channel == ch_pads:
+            pad_notes = loop_cfg.get('pad_notes', [])
+            if msg.note in pad_notes:
+                i = pad_notes.index(msg.note)
+                with _lock:
+                    seq.steps[i] = not seq.steps[i]
+                    vel = (loop_cfg.get('led_active', 15)
+                           if seq.steps[i]
+                           else loop_cfg.get('led_off', 0))
+                outport.send(mido.Message('note_on', channel=0,
+                                          note=msg.note, velocity=vel))
+        elif msg.channel == ch_keys:
+            with _lock:
+                seq.loop_note = msg.note
+        return
+
     if msg.type != 'note_on' or msg.velocity == 0:
         return
 
