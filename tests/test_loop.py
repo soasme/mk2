@@ -34,3 +34,14 @@ LOOP_CFG = {
     'led_active':   15,
     'led_off':       0,
 }
+
+# ---------------------------------------------------------------------------
+# SequencerState
+# ---------------------------------------------------------------------------
+
+def test_sequencer_state_defaults():
+    seq = m.SequencerState()
+    assert seq.loop_mode is False
+    assert seq.steps == [False] * 16
+    assert seq.current_step == 0
+    assert seq.loop_note == 60

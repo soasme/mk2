@@ -2,6 +2,7 @@
 main.py — LaunchKey Mini MK2 synthesizer.
 Loads config.toml for MIDI routing and sound configuration.
 """
+import dataclasses
 import threading
 import tomllib
 import pathlib
@@ -10,6 +11,20 @@ import numpy as np
 import sounddevice as sd
 
 SAMPLE_RATE = 44100
+
+
+@dataclasses.dataclass
+class SequencerState:
+    loop_mode:    bool      = False
+    steps:        list      = dataclasses.field(default_factory=lambda: [False] * 16)
+    current_step: int       = 0
+    loop_note:    int       = 60
+
+
+# Sequencer globals — shared between main thread and sequencer thread
+seq       = SequencerState()
+_stop_seq = threading.Event()
+_stop_seq.set()   # set = sequencer not running
 CONFIG_PATH = pathlib.Path(__file__).parent / 'config.toml'
 
 # Mixer: list of [samples, position] — written by main thread, read by audio callback
