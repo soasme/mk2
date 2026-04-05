@@ -60,6 +60,11 @@ def clear_pad_leds(outport, pad_notes):
         outport.send(mido.Message('note_on', channel=0, note=note, velocity=0))
 
 
+def sequencer_loop(seq, outport, loop_cfg, pads_sound, sounds_cfg):
+    """Step sequencer thread — implemented in full in Task 7."""
+    pass
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -229,9 +234,37 @@ def audio_callback(outdata, frames, time, status):
 # MIDI dispatch
 # ---------------------------------------------------------------------------
 
-def dispatch(msg, ch_keys, ch_pads, keys_sound, pads_sound, sounds_cfg):
+def dispatch(msg, ch_keys, ch_pads, keys_sound, pads_sound, sounds_cfg,
+             seq, outport, loop_cfg):
+    # -----------------------------------------------------------------------
+    # Play button: CC 108 ch0 value=127 → toggle loop mode
+    # -----------------------------------------------------------------------
+    if msg.type == 'control_change' and msg.channel == 0 and msg.control == 108:
+        if msg.value == 127:
+            with _lock:
+                seq.loop_mode = not seq.loop_mode
+                entering = seq.loop_mode
+                if entering:
+                    seq.current_step = 0
+            if entering:
+                _stop_seq.clear()
+                t = threading.Thread(
+                    target=sequencer_loop,
+                    args=(seq, outport, loop_cfg, pads_sound, sounds_cfg),
+                    daemon=True,
+                )
+                t.start()
+            else:
+                _stop_seq.set()
+                clear_pad_leds(outport, loop_cfg.get('pad_notes', []))
+        return
+
     if msg.type != 'note_on' or msg.velocity == 0:
         return
+
+    # -----------------------------------------------------------------------
+    # Normal mode — play sound immediately
+    # -----------------------------------------------------------------------
     if msg.channel == ch_keys:
         samples = make_sound(msg.note, msg.velocity, keys_sound, sounds_cfg)
     elif msg.channel == ch_pads:
@@ -270,7 +303,8 @@ def main():
                              callback=audio_callback):
             with mido.open_input(port) as inport:
                 for msg in inport:
-                    dispatch(msg, ch_keys, ch_pads, keys_sound, pads_sound, sounds_cfg)
+                    dispatch(msg, ch_keys, ch_pads, keys_sound, pads_sound, sounds_cfg,
+                             seq, outport, loop_cfg)
     except KeyboardInterrupt:
         print("Goodbye!")
 

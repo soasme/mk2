@@ -107,3 +107,51 @@ def test_set_pad_leds_playhead_overrides_active():
                    pad_notes=LOOP_CFG['pad_notes'], loop_cfg=LOOP_CFG)
     msg = next(msg for msg in outport.sent if msg.note == 40)
     assert msg.velocity == 12  # led_playhead, not led_active
+
+
+# ---------------------------------------------------------------------------
+# dispatch — CC 108 (play button)
+# ---------------------------------------------------------------------------
+
+def _dispatch_cc(value, seq=None, outport=None):
+    """Helper: send CC 108 through dispatch."""
+    if seq is None:
+        seq = fresh_seq()
+    if outport is None:
+        outport = MockPort()
+    msg = mido.Message('control_change', channel=0, control=108, value=value)
+    with patch('main.threading.Thread') as mock_thread_cls:
+        mock_thread_cls.return_value = MagicMock()
+        m.dispatch(msg, ch_keys=0, ch_pads=9,
+                   keys_sound='piano', pads_sound='drums', sounds_cfg={},
+                   seq=seq, outport=outport, loop_cfg=LOOP_CFG)
+        return seq, outport, mock_thread_cls
+
+
+def test_cc108_press_enters_loop_mode():
+    seq, outport, mock_thread_cls = _dispatch_cc(value=127)
+    assert seq.loop_mode is True
+    assert seq.current_step == 0
+    mock_thread_cls.return_value.start.assert_called_once()
+
+
+def test_cc108_press_exits_loop_mode():
+    seq = fresh_seq()
+    seq.loop_mode = True
+    _dispatch_cc(value=127, seq=seq)
+    assert seq.loop_mode is False
+
+
+def test_cc108_release_ignored():
+    """Value=0 (button release) must not change loop_mode."""
+    seq, _, _ = _dispatch_cc(value=0)
+    assert seq.loop_mode is False
+
+
+def test_cc108_exit_clears_leds():
+    """Exiting loop mode sends velocity=0 for all 16 pads."""
+    seq = fresh_seq()
+    seq.loop_mode = True
+    _, outport, _ = _dispatch_cc(value=127, seq=seq)
+    assert len(outport.sent) == 16
+    assert all(msg.velocity == 0 for msg in outport.sent)
