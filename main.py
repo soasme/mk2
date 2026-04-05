@@ -333,28 +333,34 @@ def main():
     midi_cfg   = cfg.get('midi', {})
     track_cfg  = cfg.get('track', {})
     sounds_cfg = cfg.get('sounds', {})
+    loop_cfg   = cfg.get('loop', {})
 
-    port        = midi_cfg.get('port', 'Launchkey Mini LK Mini MIDI')
+    port        = midi_cfg.get('port',     'Launchkey Mini LK Mini MIDI')
+    port_out    = midi_cfg.get('port_out', 'Launchkey Mini LK Mini InControl')
     ch_keys     = midi_cfg.get('channel_keys', 0)
     ch_pads     = midi_cfg.get('channel_pads', 9)
     keys_sound  = track_cfg.get('keys', 'piano')
     pads_sound  = track_cfg.get('pads', 'drums')
 
     print(f"Listening on : {port}")
+    print(f"LED output   : {port_out}")
     print(f"Keys sound   : {keys_sound}")
     print(f"Pads sound   : {pads_sound}")
+    print(f"Loop BPM     : {loop_cfg.get('bpm', 120)}")
     print("Ctrl-C to quit\n")
 
     try:
         with sd.OutputStream(samplerate=SAMPLE_RATE, channels=1,
                              dtype='float32', blocksize=512,
                              callback=audio_callback):
-            with mido.open_input(port) as inport:
-                for msg in inport:
-                    # outport and loop_cfg are wired in Task 8; NameError here until then
-                    dispatch(msg, ch_keys, ch_pads, keys_sound, pads_sound, sounds_cfg,
-                             seq, outport, loop_cfg)
+            with mido.open_output(port_out) as outport:
+                with mido.open_input(port) as inport:
+                    for msg in inport:
+                        dispatch(msg, ch_keys, ch_pads,
+                                 keys_sound, pads_sound, sounds_cfg,
+                                 seq, outport, loop_cfg)
     except KeyboardInterrupt:
+        _stop_seq.set()
         print("Goodbye!")
 
 

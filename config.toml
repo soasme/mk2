@@ -7,6 +7,7 @@
 # -----------------------------------------------------------------------------
 [midi]
 port         = "Launchkey Mini LK Mini MIDI"
+port_out     = "Launchkey Mini LK Mini InControl"
 channel_keys = 0   # MIDI channel 1, 0-indexed — keys send ch1 in InControl mode
 channel_pads = 9   # MIDI channel 10, 0-indexed — pads always use ch10
 
@@ -86,3 +87,17 @@ volume     = 0.6
 tone_mix   = 0.4    # 0.0 = pure noise, 1.0 = pure tone
 decay_rate = 18.0   # higher = shorter hit
 duration   = 0.25
+
+# -----------------------------------------------------------------------------
+# Loop play mode — step sequencer
+# -----------------------------------------------------------------------------
+[loop]
+bpm          = 120
+# MIDI note numbers the 16 pads send, ordered left-to-right, top row first.
+pad_notes    = [40, 41, 42, 43, 44, 45, 46, 47,
+                48, 49, 50, 51, 52, 53, 54, 55]
+# LED velocity values for the InControl port.
+# LaunchKey Mini MK2 bi-color encoding: bits[3:2]=green, bits[1:0]=red
+led_playhead = 12   # full green — current step
+led_active   = 15   # orange (red+green) — step is on
+led_off      = 0    # off
