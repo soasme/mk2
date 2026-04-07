@@ -78,11 +78,9 @@ decay_slow = 0.8
 attack_ms  = 8
 
 # -----------------------------------------------------------------------------
-# Drums — noise + tone burst, percussive
+# Drums — GM-mapped percussive sounds (kick, snare, hi-hats, cymbals, toms)
+# Each pad note selects its own synthesis; only volume is shared here.
 # -----------------------------------------------------------------------------
 [sounds.drums]
-type       = "drums"
-volume     = 0.6
-tone_mix   = 0.4    # 0.0 = pure noise, 1.0 = pure tone
-decay_rate = 18.0   # higher = shorter hit
-duration   = 0.25
+type   = "drums"
+volume = 0.6
