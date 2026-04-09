@@ -8,79 +8,22 @@
 [midi]
 port         = "Launchkey Mini LK Mini MIDI"
 channel_keys = 0   # MIDI channel 1, 0-indexed — keys send ch1 in InControl mode
-channel_pads = 9   # MIDI channel 10, 0-indexed — pads always use ch10
+channel_pads = 9   # MIDI channel 10, 0-indexed — pads always use ch10 (GM percussion)
 
 # -----------------------------------------------------------------------------
-# Active track: which sound each input uses.
-# Values must match a key under [sounds].
+# FluidSynth engine settings
+# -----------------------------------------------------------------------------
+[synth]
+soundfont = "soundfonts/GeneralUser_GS.sf2"   # relative to this file, or absolute
+gain      = 0.5
+driver    = "coreaudio"   # macOS: "coreaudio"; Linux: "alsa" or "pulseaudio"
+
+# -----------------------------------------------------------------------------
+# Active track: which instrument the keys play.
+# bank=0, program=0 → Acoustic Grand Piano (GM default)
+# See GM instrument list for other program numbers (0–127).
+# Pads always use channel 10 (GM percussion); no program needed.
 # -----------------------------------------------------------------------------
 [track]
-keys = "piano"
-pads = "drums"
-
-# =============================================================================
-# Sound definitions
-# Each entry under [sounds] is a named sound preset.
-# The `type` field selects the synthesis engine.
-# =============================================================================
-
-# -----------------------------------------------------------------------------
-# Piano — additive synthesis with harmonics and two-stage decay
-# -----------------------------------------------------------------------------
-[sounds.piano]
-type       = "piano"
-volume     = 0.4
-harmonics  = [1.0, 0.50, 0.25, 0.12, 0.06, 0.03]
-decay_fast = 6.0    # rate of initial fast decay
-decay_slow = 1.2    # rate of slow sustain tail
-attack_ms  = 5      # attack time in milliseconds
-
-# -----------------------------------------------------------------------------
-# Guitar — Karplus-Strong plucked string synthesis
-# -----------------------------------------------------------------------------
-[sounds.guitar]
-type     = "guitar"
-volume   = 0.5
-decay    = 0.996    # string damping per sample (0–1, closer to 1 = longer ring)
-duration = 2.5      # maximum note length in seconds
-
-# -----------------------------------------------------------------------------
-# Organ — sustained harmonics, Hammond-style
-# -----------------------------------------------------------------------------
-[sounds.organ]
-type       = "organ"
-volume     = 0.3
-harmonics  = [1.0, 0.50, 0.33, 0.25, 0.20]
-attack_ms  = 15     # slow attack gives organ character
-release_ms = 50
-duration   = 1.5
-
-# -----------------------------------------------------------------------------
-# Bells — inharmonic partials with slow decay
-# -----------------------------------------------------------------------------
-[sounds.bells]
-type       = "bells"
-volume     = 0.4
-harmonics  = [1.0, 0.25, 0.06]
-decay_rate = 0.8    # lower = longer ring
-attack_ms  = 2
-duration   = 2.5
-
-# -----------------------------------------------------------------------------
-# Bass — piano engine tuned for low-register warmth
-# -----------------------------------------------------------------------------
-[sounds.bass]
-type       = "piano"
-volume     = 0.5
-harmonics  = [1.0, 0.60, 0.30, 0.10]
-decay_fast = 3.0
-decay_slow = 0.8
-attack_ms  = 8
-
-# -----------------------------------------------------------------------------
-# Drums — GM-mapped percussive sounds (kick, snare, hi-hats, cymbals, toms)
-# Each pad note selects its own synthesis; only volume is shared here.
-# -----------------------------------------------------------------------------
-[sounds.drums]
-type   = "drums"
-volume = 0.6
+keys_bank    = 0
+keys_program = 0   # 0=Acoustic Grand Piano

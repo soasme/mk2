@@ -11,3 +11,6 @@ wheels/
 
 # Git worktrees
 .worktrees
+
+# Downloaded soundfont files (large binaries, not tracked)
+soundfonts/
