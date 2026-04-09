@@ -26,4 +26,6 @@ driver    = "coreaudio"   # macOS: "coreaudio"; Linux: "alsa" or "pulseaudio"
 # -----------------------------------------------------------------------------
 [track]
 keys_bank    = 0
-keys_program = 0   # 0=Acoustic Grand Piano
+keys_program = 0    # 0=Acoustic Grand Piano
+pads_bank    = 128  # 128=GM percussion bank
+pads_program = 0    # standard GM drum kit

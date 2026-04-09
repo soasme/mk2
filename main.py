@@ -45,12 +45,15 @@ def main():
     keys_program = track_cfg.get('keys_program', 0)
     fs.program_select(ch_keys, sfid, keys_bank, keys_program)
 
-    # Pads channel 9 is GM percussion — no program_select needed
+    # Pads channel: GM percussion lives in bank 128
+    pads_bank    = track_cfg.get('pads_bank', 128)
+    pads_program = track_cfg.get('pads_program', 0)
+    fs.program_select(ch_pads, sfid, pads_bank, pads_program)
 
     print(f"SoundFont  : {sf_path}")
     print(f"Listening  : {port}")
     print(f"Keys       : ch{ch_keys + 1}, bank {keys_bank}, program {keys_program}")
-    print(f"Pads       : ch{ch_pads + 1} (GM percussion)")
+    print(f"Pads       : ch{ch_pads + 1}, bank {pads_bank}, program {pads_program} (GM percussion)")
     print("Ctrl-C to quit\n")
 
     try:
