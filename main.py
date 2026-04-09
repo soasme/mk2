@@ -36,6 +36,12 @@ def main():
 
     fs   = fluidsynth.Synth(gain=gain)
     fs.start(driver=driver)
+    if not fs.audio_driver:
+        raise RuntimeError(
+            f"Failed to start audio driver '{driver}'. "
+            "Check [synth] driver in config.toml. "
+            "macOS: 'coreaudio', Linux: 'alsa' or 'pulseaudio', Windows: 'dsound'."
+        )
     sfid = fs.sfload(str(sf_path))
     if sfid == -1:
         raise RuntimeError(f"Failed to load SoundFont: {sf_path}")
