@@ -3,33 +3,29 @@
 ## Purpose
 
 A real-time software synthesizer for the Novation LaunchKey Mini MK2.
-Reads MIDI input from the keyboard, synthesizes audio on the fly, and plays it through the system audio output.
-All sound and routing behaviour is controlled by `config.toml`.
+Reads MIDI input from the keyboard and forwards it to FluidSynth, which renders audio from a GM SoundFont file and plays it through the system audio output.
+All routing and sound configuration is controlled by `config.toml`.
 
 ## Data Flow
 
 ```
 LaunchKey Mini MK2 (USB)
         │
-        │  MIDI Note On / Note Off
+        │  MIDI messages (Note On/Off, CC, Pitchwheel)
         ▼
    mido.open_input()          — blocking iterator on main thread
         │
         ▼
-     dispatch()               — routes message by MIDI channel
+   message dispatch           — routes by message type
         │
-        ├─ channel_keys → make_sound(keys_sound, …)
-        └─ channel_pads → make_sound(pads_sound, …)
+        ├─ note_on  → fs.noteon(channel, note, velocity)
+        ├─ note_off → fs.noteoff(channel, note)
+        ├─ control_change → fs.cc(channel, control, value)
+        └─ pitchwheel → fs.pitch_bend(channel, pitch)
                 │
                 ▼
-        sound generator        — numpy synthesis, returns float32 buffer
-                │
-                ▼
-          _active list          — thread-safe mixer queue
-                │
-                ▼
-       audio_callback()        — sounddevice real-time thread
-                │              sums all active buffers, clips to [-1, 1]
+         FluidSynth            — renders SoundFont samples
+                │              runs its own internal audio thread
                 ▼
         System Audio Out
 ```
@@ -38,38 +34,29 @@ LaunchKey Mini MK2 (USB)
 
 | File               | Role |
 |--------------------|------|
-| `main.py`          | Entry point — MIDI loop, sound generators, audio mixer |
-| `config.toml`      | Runtime configuration — MIDI ports, active track, sound presets |
+| `main.py`          | Entry point — loads config, initialises FluidSynth, MIDI event loop |
+| `config.toml`      | Runtime configuration — MIDI ports, SoundFont path, GM bank/program |
+| `Brewfile`         | Homebrew dependencies (`brew bundle` installs `fluid-synth`) |
 | `CONFIGURATION.md` | Reference for every config.toml option |
+| `README.md`        | Setup and usage guide |
 | `AGENT.md`         | This file |
 
 ## Concurrency Model
 
-| Thread | Responsibility |
-|--------|---------------|
-| Main thread | Reads MIDI messages, generates sound buffers, appends to `_active` |
-| sounddevice thread | Runs `audio_callback` per audio block, consumes `_active` |
+FluidSynth manages its own internal audio thread. `main.py` is single-threaded: it reads MIDI messages from mido in a blocking loop and makes synchronous calls into the FluidSynth C library. No Python threading primitives are needed.
 
-`_active` is a plain list protected by `threading.Lock`. The main thread appends; the callback reads and advances positions, dropping exhausted entries. No other synchronisation is needed.
+## SoundFont and GM Programs
 
-## Sound Engines
+FluidSynth renders audio by looking up samples from a loaded SoundFont (`.sf2`) file. Each channel must be assigned to a bank and program number before note events are sent:
 
-Each engine is a pure function `(note, velocity, cfg) → np.ndarray[float32]`:
+- **Keys channel** (default: ch1): bank 0, program 0–127 (GM melodic instruments)
+- **Pads channel** (default: ch10): bank 128, program 0–N (GM percussion kits)
 
-| Engine  | Algorithm | Good for |
-|---------|-----------|----------|
-| `piano` | Additive synthesis — fundamental + 5 harmonics, two-stage exponential decay, velocity-sensitive brightness | Keys, melodic leads |
-| `guitar` | Karplus-Strong — random noise in a ring buffer, averaged and damped each cycle | Plucked strings |
-| `organ`  | Additive synthesis — sustained harmonics, slow attack | Chords, pads |
-| `drums`  | Noise + sine burst, exponential decay | Pad percussion |
-| `bells`  | Inharmonic additive synthesis (partials at 1×, 2.76×, 5.40×) | Pad accents |
+These are set at startup via `fs.program_select(channel, sfid, bank, program)`.
 
-## Adding a New Sound Engine
+## Swapping Instruments
 
-1. Write a function `make_myengine(note, velocity, cfg) -> np.ndarray`.
-2. Register it in `SOUND_MAKERS` in `main.py`.
-3. Add a `[sounds.mypreset]` block in `config.toml` with `type = "myengine"`.
-4. Set `track.keys` or `track.pads` to `"mypreset"`.
+Change `keys_program` or `pads_program` in `config.toml`. No code changes required. See `CONFIGURATION.md` for the full option reference and `README.md` for a GM program number table.
 
 ## MIDI Channel Notes
 
