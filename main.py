@@ -293,7 +293,7 @@ def handle_event(event, fs, ch_keys, ch_pads, sfid):
             print(f"Percussion: program={event.pads_program + 1} name={name} (fallback to bank {actual_bank})")
         else:
             print(f"Percussion: program={event.pads_program + 1} name={name}")
-        speak(f"fallback {name}" if fallback else name)
+        speak(name)
     elif isinstance(event, ProgramChangeEvent):
         actual_bank = program_select_with_fallback(fs, event.channel, sfid, event.keys_bank, event.keys_program)
         name = gm_name(actual_bank, event.keys_program)
@@ -302,7 +302,7 @@ def handle_event(event, fs, ch_keys, ch_pads, sfid):
             print(f"Program: ch{event.channel + 1} bank={actual_bank} program={event.keys_program + 1} name={name} (fallback to bank {actual_bank})")
         else:
             print(f"Program: ch{event.channel + 1} bank={event.keys_bank} program={event.keys_program + 1} name={name}")
-        speak(f"fallback {name}" if fallback else name)
+        speak(name)
 
 
 # ---------------------------------------------------------------------------
