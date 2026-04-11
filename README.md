@@ -26,11 +26,29 @@ uv sync
 
 ```bash
 mkdir -p soundfonts
+```
+
+Pick one of the free GM-compatible SoundFonts below and download it into `soundfonts/`:
+
+| SoundFont | Size | Character | Download |
+|-----------|------|-----------|----------|
+| **GeneralUser GS** *(default)* | ~30 MB | Balanced, clean GM coverage | `curl -L "https://github.com/ROCKNIX/generaluser-gs/raw/main/GeneralUser%20GS%20v1.471.sf2" -o soundfonts/GeneralUser_GS.sf2` |
+| **Fluid R3 GM** | ~140 MB | Richer, more expressive | `curl -L "https://github.com/musescore/MuseScore/raw/master/share/sound/FluidR3Mono_GM.sf3" -o soundfonts/FluidR3_GM.sf3` |
+| **MuseScore General** | ~200 MB | High quality, orchestral | Download from [musescore.org/download/MuseScore_General.sf3](https://musescore.org/download/MuseScore_General.sf3) |
+
+**Example — GeneralUser GS (recommended for getting started):**
+
+```bash
 curl -L "https://github.com/ROCKNIX/generaluser-gs/raw/main/GeneralUser%20GS%20v1.471.sf2" \
      -o soundfonts/GeneralUser_GS.sf2
 ```
 
-Any GM-compatible `.sf2` file works. Update `config.toml → synth.soundfont` if you use a different file or path.
+If you download a different file, update `config.toml` to point at it:
+
+```toml
+[synth]
+soundfont = "soundfonts/FluidR3_GM.sf3"
+```
 
 ## Usage
 
