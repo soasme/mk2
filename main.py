@@ -296,6 +296,8 @@ def handle_event(event, fs, ch_keys, ch_pads, sfid):
         speak(name)
     elif isinstance(event, ProgramChangeEvent):
         actual_bank = program_select_with_fallback(fs, event.channel, sfid, event.keys_bank, event.keys_program)
+        fs.cc(event.channel, 7, 127)
+        fs.cc(event.channel, 11, 127)
         name = gm_name(actual_bank, event.keys_program)
         fallback = actual_bank != event.keys_bank
         if fallback:
@@ -343,11 +345,15 @@ def main():
     if sfid == -1:
         raise RuntimeError(f"Failed to load SoundFont: {sf_path}")
 
-    fs.program_select(ch_keys, sfid, 0, 0)    # Acoustic Grand Piano
+    # Initialize all melodic channels so any channel is ready when selected
+    for ch in range(16):
+        if ch == ch_pads:
+            continue
+        fs.program_select(ch, sfid, 0, 0)  # Acoustic Grand Piano
+        fs.cc(ch, 7, 127)                  # channel volume
+        fs.cc(ch, 11, 127)                 # expression
     fs.program_select(ch_pads, sfid, 128, 0)  # Standard Kit
-    fs.cc(ch_keys, 7, 127)   # channel volume
     fs.cc(ch_pads, 7, 127)
-    fs.cc(ch_keys, 11, 127)  # expression
     fs.cc(ch_pads, 11, 127)
 
     print(f"SoundFont  : {sf_path}")
