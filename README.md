@@ -35,6 +35,7 @@ Download a SoundFont into `soundfonts/`:
 | **Fluid R3 GM** | ~140 MB | GM2 | `curl -L "https://github.com/musescore/MuseScore/raw/master/share/sound/FluidR3Mono_GM.sf3" -o soundfonts/FluidR3_GM.sf3` |
 | **GeneralUser GS** | ~30 MB | GM1 | `curl -L "https://github.com/ROCKNIX/generaluser-gs/raw/main/GeneralUser%20GS%20v1.471.sf2" -o soundfonts/GeneralUser_GS.sf2` |
 | **MuseScore General** | ~200 MB | GM1 | `curl -L "https://musical-artifacts.com/artifacts/3001/MS_Basic.sf2" -o soundfonts/MS_Basic.sf2` |
+| **OmegaGMGS2 GM** | ~119MB | GM2 | Check <https://musescore.org/en/node/109371> |
 
 GM1 fonts work fine — pad sequences must end with **Pad 10** (bank 0). GM2 fonts additionally support alternate banks (end with Pad 1–9).
 
