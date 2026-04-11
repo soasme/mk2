@@ -78,11 +78,11 @@ Copy the exact port name into `config.toml → midi.port`.
 
 ## Changing sounds live
 
-Instruments are selected on the device using the two round play buttons, without editing any files.
+Instruments are selected on the device using the **Scene Up** and **Scene Down** buttons, without editing any files.
 
 ### KeySelect — change the keys instrument
 
-Hold the **second play button** (KeySelect), press pads to enter the patch number, then release:
+Hold the **Scene Down** button (KeySelect), press pads to enter the patch number, then release:
 
 - Pads 1–10 enter digits **1 2 3 4 5 6 7 8 9 0**. The digits directly spell the patch number (1-indexed). Bank defaults to 0.
 - To select a non-zero bank, press **Pad 16** as a separator, then enter the bank number.
@@ -451,7 +451,7 @@ Pad sequence uses pad numbers 1–9, **10** (digit 0), and **16** (bank separato
 
 ### PadSelect — change the drum kit
 
-Hold the **first play button** (PadSelect), press one pad (1–9) to select a GM percussion kit, then release:
+Hold the **Scene Up** button (PadSelect), press one pad (1–9) to select a GM percussion kit, then release:
 
 | Pad | Kit |
 |-----|-----|

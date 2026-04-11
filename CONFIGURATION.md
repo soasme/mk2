@@ -28,9 +28,9 @@ FluidSynth engine settings.
 
 Instruments are selected live on the device — there is no `[track]` section in `config.toml`. On startup the keys default to **Acoustic Grand Piano** (bank 0, program 1) and the pads default to **Standard Kit** (bank 128, program 1).
 
-Use the two round play buttons to change sounds:
+Use the **Scene Up** and **Scene Down** buttons to change sounds:
 
-### KeySelect (second play button)
+### KeySelect (Scene Down button)
 
 Hold KeySelect, press pads 1–10 to type a code, release. The last digit is the GM2 bank; the preceding digits are the patch number (1-indexed).
 
@@ -55,7 +55,7 @@ Pads: 7, 4  →  patch 7, bank 4  →  GM2 bank 4, patch 7
 
 Only the keys channel is affected. The pads channel is unchanged.
 
-### PadSelect (first play button)
+### PadSelect (Scene Up button)
 
 Hold PadSelect, press one pad (1–9) to select a GM percussion kit, release.
 

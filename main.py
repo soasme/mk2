@@ -70,8 +70,8 @@ def gm_name(bank, program):
 
 CONFIG_PATH = pathlib.Path(__file__).parent / 'config.toml'
 
-CC_PAD_SELECT     = 108   # First play button
-CC_KEY_SELECT     = 109   # Second play button
+CC_PAD_SELECT     = 104   # Scene Up (upper round pad)
+CC_KEY_SELECT     = 105   # Scene Down (lower round pad)
 CC_CHANNEL_SELECT = None  # TODO: discover with DEBUG=1 — hold button + press pads 1-9 to pick channel
 
 # Basic-mode note numbers for pads 1-10, mapped to digit (pad 10 → 0)
@@ -138,6 +138,7 @@ def make_input_state(ch_keys, ch_pads):
         'channel_select_active': False,
         'channel_select_captured': set(),
         'key_select_active': False,
+        'key_select_channel': ch_keys,  # latched target when KeySelect is pressed
         'key_select_digits': [],       # patch digits (before pad 16)
         'key_select_bank_digits': [],  # bank digits (after pad 16)
         'key_select_bank_sep': False,  # whether pad 16 has been pressed
@@ -216,24 +217,33 @@ def parse_events(msg, state):
         elif msg.control == CC_KEY_SELECT:
             if msg.value == 127:
                 state['key_select_active'] = True
+                state['key_select_channel'] = state['current_keys_channel']
                 state['key_select_digits'] = []
                 state['key_select_bank_digits'] = []
                 state['key_select_bank_sep'] = False
                 state['key_select_captured'] = set()
-                print("KeySelect Button is pressed")
+                print(
+                    "KeySelect Button is pressed "
+                    f"(target channel index {state['key_select_channel']}, "
+                    f"ch{state['key_select_channel'] + 1})"
+                )
             else:
                 state['key_select_active'] = False
                 print("KeySelect Button is released")
                 digits = state['key_select_digits']
                 bank_digits = state['key_select_bank_digits']
+                key_select_channel = state['key_select_channel']
                 if digits:
-                    if state['current_keys_channel'] == state['ch_pads']:
-                        print("KeySelect ignored: current channel is ch10 (percussion)")
+                    if key_select_channel == state['ch_pads']:
+                        print(
+                            "KeySelect ignored: "
+                            f"target channel is ch{key_select_channel + 1} (percussion)"
+                        )
                     else:
                         program_1indexed = int(''.join(str(d) for d in digits))
                         bank = int(''.join(str(d) for d in bank_digits)) if bank_digits else 0
                         events.append(ProgramChangeEvent(
-                            channel=state['current_keys_channel'],
+                            channel=key_select_channel,
                             keys_bank=bank,
                             keys_program=program_1indexed - 1,
                         ))
