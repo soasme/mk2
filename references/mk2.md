@@ -292,6 +292,8 @@ Reply: F0h, 7Eh, 00h, 06h, 02h, 00h, 20h, 29h, 7Ah, 00h, FM1, FM2, R1, R2, R3, R
 | Play | CC | 73h (115) | 0/127 |
 | Loop | CC | 74h (116) | 0/127 |
 | Record | CC | 75h (117) | 0/127 |
+| Play Button 1 (PadSelect) | CC | 6Ch (108) | 0/127 |
+| Play Button 2 (KeySelect) | CC | 6Dh (109) | 0/127 |
 
 ---
 

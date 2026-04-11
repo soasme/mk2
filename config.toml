@@ -14,18 +14,6 @@ channel_pads = 9   # MIDI channel 10, 0-indexed — pads always use ch10 (GM per
 # FluidSynth engine settings
 # -----------------------------------------------------------------------------
 [synth]
-soundfont = "soundfonts/GeneralUser_GS.sf2"   # relative to this file, or absolute
-gain      = 0.5
+soundfont = "soundfonts/OmegaGMGS2.sf2"   # relative to this file, or absolute
+gain      = 1.5
 driver    = "coreaudio"   # macOS: "coreaudio"; Linux: "alsa" or "pulseaudio"
-
-# -----------------------------------------------------------------------------
-# Active track: which instrument the keys play.
-# bank=0, program=0 → Acoustic Grand Piano (GM default)
-# See GM instrument list for other program numbers (0–127).
-# Pads always use channel 10 (GM percussion); no program needed.
-# -----------------------------------------------------------------------------
-[track]
-keys_bank    = 0
-keys_program = 0    # 0=Acoustic Grand Piano
-pads_bank    = 128  # 128=GM percussion bank
-pads_program = 0    # standard GM drum kit

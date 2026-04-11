@@ -24,58 +24,66 @@ FluidSynth engine settings.
 
 ---
 
-## `[track]`
+## Instrument selection
 
-Selects which GM instrument each input plays.
+Instruments are selected live on the device — there is no `[track]` section in `config.toml`. On startup the keys default to **Acoustic Grand Piano** (bank 0, program 1) and the pads default to **Standard Kit** (bank 128, program 1).
 
-| Key            | Type | Default | Description |
-|----------------|------|---------|-------------|
-| `keys_bank`    | int  | `0`     | SoundFont bank for keys. `0` = GM melodic bank. |
-| `keys_program` | int  | `0`     | GM program number (0–127) for keys. `0` = Acoustic Grand Piano. |
-| `pads_bank`    | int  | `128`   | SoundFont bank for pads. `128` = GM percussion bank. |
-| `pads_program` | int  | `0`     | Drum kit number within the percussion bank. `0` = Standard Kit. |
+Use the **Scene Up** and **Scene Down** buttons to change sounds:
 
-### Changing the keys instrument
+### KeySelect (Scene Down button)
 
-Set `keys_program` to any [GM program number](https://en.wikipedia.org/wiki/General_MIDI#Program_change_events):
+Hold KeySelect, press pads 1–10 to type a code, release. The last digit is the GM2 bank; the preceding digits are the patch number (1-indexed).
 
-```toml
-[track]
-keys_bank    = 0
-keys_program = 40   # 40 = Violin
+```
+Pads: 1, 0  →  patch 1, bank 0  →  Acoustic Grand Piano
+Pads: 4, 0  →  patch 4, bank 0  →  Honky-tonk Piano
+Pads: 7, 4  →  patch 7, bank 4  →  GM2 bank 4, patch 7
 ```
 
-### Changing the drum kit
+| Pad | Digit |
+|-----|-------|
+| Pad 1 | 1 |
+| Pad 2 | 2 |
+| Pad 3 | 3 |
+| Pad 4 | 4 |
+| Pad 5 | 5 |
+| Pad 6 | 6 |
+| Pad 7 | 7 |
+| Pad 8 | 8 |
+| Pad 9 | 9 |
+| Pad 10 | 0 |
 
-Set `pads_program` to a GM percussion kit number (bank 128):
+Only the keys channel is affected. The pads channel is unchanged.
 
-```toml
-[track]
-pads_bank    = 128
-pads_program = 25   # 25 = TR-808
-```
+### PadSelect (Scene Up button)
+
+Hold PadSelect, press one pad (1–9) to select a GM percussion kit, release.
+
+| Pad | Program | Kit |
+|-----|---------|-----|
+| 1 | 1 | Standard Kit |
+| 2 | 2 | Room Kit |
+| 3 | 3 | Power Kit |
+| 4 | 4 | Electronic Kit |
+| 5 | 5 | TR-808 Kit |
+| 6 | 6 | Jazz Kit |
+| 7 | 7 | Brush Kit |
+| 8 | 8 | Orchestra Kit |
+| 9 | 9 | Sound FX Kit |
+
+Only the pads channel (bank 128) is affected. The keys channel is unchanged.
 
 ---
 
-## Examples
+## Environment variables
 
-**Electric bass + TR-808:**
-```toml
-[track]
-keys_bank    = 0
-keys_program = 33   # Electric Bass (finger)
-pads_bank    = 128
-pads_program = 25   # TR-808
-```
+| Variable | Values | Description |
+|----------|--------|-------------|
+| `DEBUG`  | `1`    | Print every note_on / note_off event to stdout. |
 
-**Strings + Jazz kit:**
-```toml
-[track]
-keys_bank    = 0
-keys_program = 48   # String Ensemble 1
-pads_bank    = 128
-pads_program = 32   # Jazz Kit
-```
+---
+
+## Example config.toml
 
 **Alternative SoundFont:**
 ```toml
