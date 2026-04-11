@@ -14,6 +14,6 @@ channel_pads = 9   # MIDI channel 10, 0-indexed — pads always use ch10 (GM per
 # FluidSynth engine settings
 # -----------------------------------------------------------------------------
 [synth]
-soundfont = "soundfonts/FluidR3_GM.sf3"   # relative to this file, or absolute
+soundfont = "soundfonts/OmegaGMGS2.sf2"   # relative to this file, or absolute
 gain      = 1.5
 driver    = "coreaudio"   # macOS: "coreaudio"; Linux: "alsa" or "pulseaudio"

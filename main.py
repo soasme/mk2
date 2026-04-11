@@ -70,8 +70,9 @@ def gm_name(bank, program):
 
 CONFIG_PATH = pathlib.Path(__file__).parent / 'config.toml'
 
-CC_PAD_SELECT = 108  # First play button
-CC_KEY_SELECT = 109  # Second play button
+CC_PAD_SELECT     = 108   # First play button
+CC_KEY_SELECT     = 109   # Second play button
+CC_CHANNEL_SELECT = None  # TODO: discover with DEBUG=1 — hold button + press pads 1-9 to pick channel
 
 # Basic-mode note numbers for pads 1-10, mapped to digit (pad 10 → 0)
 PAD_NOTE_TO_DIGIT = {
@@ -79,6 +80,13 @@ PAD_NOTE_TO_DIGIT = {
     48: 5, 49: 6, 50: 7, 51: 8,  # Pads 5-8
     36: 9, 37: 0,                 # Pads 9-10
 }
+
+# Pad 16 (basic mode note 47) acts as a bank separator in KeySelect sequences.
+# Digits before pad 16 = patch number (1-indexed); digits after = bank number.
+# Without pad 16, bank defaults to 0.
+# Example: 1,2,8       → patch 128, bank 0
+# Example: 1,2,8,16,3  → patch 128, bank 3
+PAD_NOTE_BANK_SEP = 47  # Pad 16, basic mode
 
 
 # ---------------------------------------------------------------------------
@@ -113,6 +121,7 @@ class PercussionChangeEvent:
 
 @dataclass
 class ProgramChangeEvent:
+    channel: int       # target MIDI channel (0-indexed)
     keys_bank: int
     keys_program: int  # 0-indexed
 
@@ -121,13 +130,20 @@ class ProgramChangeEvent:
 # Input state (mutated by parse_events)
 # ---------------------------------------------------------------------------
 
-def make_input_state():
+def make_input_state(ch_keys, ch_pads):
     return {
+        'ch_keys': ch_keys,
+        'ch_pads': ch_pads,
+        'current_keys_channel': ch_keys,  # which channel KeySelect and key notes target
+        'channel_select_active': False,
+        'channel_select_captured': set(),
         'key_select_active': False,
-        'key_select_digits': [],
+        'key_select_digits': [],       # patch digits (before pad 16)
+        'key_select_bank_digits': [],  # bank digits (after pad 16)
+        'key_select_bank_sep': False,  # whether pad 16 has been pressed
         'key_select_captured': set(),
         'pad_select_active': False,
-        'pad_select_program': None,   # digit 1-9 pressed during pad select
+        'pad_select_program': None,        # digit 1-9 pressed during pad select
         'pad_select_captured': set(),
     }
 
@@ -142,25 +158,50 @@ def parse_events(msg, state):
 
     if msg.type == 'note_on':
         digit = PAD_NOTE_TO_DIGIT.get(msg.note)
-        if state['pad_select_active'] and digit and 1 <= digit <= 9:
+        if state['channel_select_active'] and digit and 1 <= digit <= 9:
+            # Pads 1-9 → channels 0-8; pad 10 (digit 0) ignored (would be ch10)
+            state['current_keys_channel'] = digit - 1
+            state['channel_select_captured'].add(msg.note)
+            print(f"Channel selected: ch{digit}")
+        elif state['pad_select_active'] and digit and 1 <= digit <= 9:
             state['pad_select_program'] = digit - 1  # last pad wins
             state['pad_select_captured'].add(msg.note)
+        elif state['key_select_active'] and msg.note == PAD_NOTE_BANK_SEP:
+            state['key_select_bank_sep'] = True
+            state['key_select_captured'].add(msg.note)
         elif state['key_select_active'] and digit is not None:
-            state['key_select_digits'].append(digit)
+            if state['key_select_bank_sep']:
+                state['key_select_bank_digits'].append(digit)
+            else:
+                state['key_select_digits'].append(digit)
             state['key_select_captured'].add(msg.note)
         else:
-            events.append(NoteOnEvent(msg.channel, msg.note, msg.velocity))
+            # Reroute hardware key notes to current_keys_channel
+            ch = state['current_keys_channel'] if msg.channel == state['ch_keys'] else msg.channel
+            events.append(NoteOnEvent(ch, msg.note, msg.velocity))
 
     elif msg.type == 'note_off':
-        if msg.note in state['pad_select_captured']:
+        if msg.note in state['channel_select_captured']:
+            state['channel_select_captured'].discard(msg.note)
+        elif msg.note in state['pad_select_captured']:
             state['pad_select_captured'].discard(msg.note)
         elif msg.note in state['key_select_captured']:
             state['key_select_captured'].discard(msg.note)
         else:
-            events.append(NoteOffEvent(msg.channel, msg.note))
+            ch = state['current_keys_channel'] if msg.channel == state['ch_keys'] else msg.channel
+            events.append(NoteOffEvent(ch, msg.note))
 
     elif msg.type == 'control_change':
-        if msg.control == CC_PAD_SELECT:
+        if CC_CHANNEL_SELECT is not None and msg.control == CC_CHANNEL_SELECT:
+            if msg.value == 127:
+                state['channel_select_active'] = True
+                state['channel_select_captured'] = set()
+                print("ChannelSelect Button is pressed")
+            else:
+                state['channel_select_active'] = False
+                print("ChannelSelect Button is released")
+
+        elif msg.control == CC_PAD_SELECT:
             if msg.value == 127:
                 state['pad_select_active'] = True
                 state['pad_select_program'] = None
@@ -176,20 +217,29 @@ def parse_events(msg, state):
             if msg.value == 127:
                 state['key_select_active'] = True
                 state['key_select_digits'] = []
+                state['key_select_bank_digits'] = []
+                state['key_select_bank_sep'] = False
                 state['key_select_captured'] = set()
                 print("KeySelect Button is pressed")
             else:
                 state['key_select_active'] = False
                 print("KeySelect Button is released")
                 digits = state['key_select_digits']
-                if len(digits) >= 2:
-                    bank = digits[-1]
-                    program_1indexed = int(''.join(str(d) for d in digits[:-1]))
-                    events.append(ProgramChangeEvent(
-                        keys_bank=bank,
-                        keys_program=program_1indexed - 1,
-                    ))
+                bank_digits = state['key_select_bank_digits']
+                if digits:
+                    if state['current_keys_channel'] == state['ch_pads']:
+                        print("KeySelect ignored: current channel is ch10 (percussion)")
+                    else:
+                        program_1indexed = int(''.join(str(d) for d in digits))
+                        bank = int(''.join(str(d) for d in bank_digits)) if bank_digits else 0
+                        events.append(ProgramChangeEvent(
+                            channel=state['current_keys_channel'],
+                            keys_bank=bank,
+                            keys_program=program_1indexed - 1,
+                        ))
         else:
+            if DEBUG:
+                print(f"CC ch={msg.channel} ctrl={msg.control} val={msg.value}")
             events.append(CCEvent(msg.channel, msg.control, msg.value))
 
     elif msg.type == 'pitchwheel':
@@ -238,19 +288,21 @@ def handle_event(event, fs, ch_keys, ch_pads, sfid):
     elif isinstance(event, PercussionChangeEvent):
         actual_bank = program_select_with_fallback(fs, ch_pads, sfid, 128, event.pads_program)
         name = gm_name(actual_bank, event.pads_program)
-        if actual_bank != 128:
+        fallback = actual_bank != 128
+        if fallback:
             print(f"Percussion: program={event.pads_program + 1} name={name} (fallback to bank {actual_bank})")
         else:
             print(f"Percussion: program={event.pads_program + 1} name={name}")
-        speak(name)
+        speak(f"fallback {name}" if fallback else name)
     elif isinstance(event, ProgramChangeEvent):
-        actual_bank = program_select_with_fallback(fs, ch_keys, sfid, event.keys_bank, event.keys_program)
+        actual_bank = program_select_with_fallback(fs, event.channel, sfid, event.keys_bank, event.keys_program)
         name = gm_name(actual_bank, event.keys_program)
-        if actual_bank != event.keys_bank:
-            print(f"Program: bank={actual_bank} program={event.keys_program + 1} name={name} (fallback to bank {actual_bank})")
+        fallback = actual_bank != event.keys_bank
+        if fallback:
+            print(f"Program: ch{event.channel + 1} bank={actual_bank} program={event.keys_program + 1} name={name} (fallback to bank {actual_bank})")
         else:
-            print(f"Program: bank={event.keys_bank} program={event.keys_program + 1} name={name}")
-        speak(name)
+            print(f"Program: ch{event.channel + 1} bank={event.keys_bank} program={event.keys_program + 1} name={name}")
+        speak(f"fallback {name}" if fallback else name)
 
 
 # ---------------------------------------------------------------------------
@@ -304,7 +356,7 @@ def main():
     print(f"Pads       : ch{ch_pads + 1}")
     print("Ctrl-C to quit\n")
 
-    state = make_input_state()
+    state = make_input_state(ch_keys, ch_pads)
 
     try:
         with mido.open_input(port) as inport:
