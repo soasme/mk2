@@ -16,6 +16,7 @@ import mido
 import fluidsynth
 
 DEBUG = os.environ.get('DEBUG') == '1'
+SAY_INSTRUMENT = os.environ.get('SAY_INSTRUMENT') == '1'
 
 # GM program names, 0-indexed (bank 0 melodic, bank 128 percussion)
 GM_MELODIC = [
@@ -202,6 +203,8 @@ def parse_events(msg, state):
 # ---------------------------------------------------------------------------
 
 def speak(text):
+    if not SAY_INSTRUMENT:
+        return
     try:
         if sys.platform == 'darwin':
             subprocess.Popen(['say', text])
