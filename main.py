@@ -137,6 +137,7 @@ def make_input_state(ch_keys, ch_pads):
         'current_keys_channel': ch_keys,  # which channel KeySelect and key notes target
         'channel_select_active': False,
         'channel_select_captured': set(),
+        'last_keys_channel': ch_keys,  # most recent actual channel key notes were sent on
         'key_select_active': False,
         'key_select_channel': ch_keys,  # latched target when KeySelect is pressed
         'key_select_digits': [],       # patch digits (before pad 16)
@@ -179,6 +180,9 @@ def parse_events(msg, state):
         else:
             # Reroute hardware key notes to current_keys_channel
             ch = state['current_keys_channel'] if msg.channel == state['ch_keys'] else msg.channel
+            # Track the actual output channel so KeySelect can target it
+            if msg.channel != state['ch_pads']:
+                state['last_keys_channel'] = ch
             events.append(NoteOnEvent(ch, msg.note, msg.velocity))
 
     elif msg.type == 'note_off':
@@ -217,7 +221,7 @@ def parse_events(msg, state):
         elif msg.control == CC_KEY_SELECT:
             if msg.value == 127:
                 state['key_select_active'] = True
-                state['key_select_channel'] = state['current_keys_channel']
+                state['key_select_channel'] = state['last_keys_channel']
                 state['key_select_digits'] = []
                 state['key_select_bank_digits'] = []
                 state['key_select_bank_sep'] = False
