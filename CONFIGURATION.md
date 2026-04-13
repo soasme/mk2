@@ -7,8 +7,9 @@ MIDI device and channel routing.
 | Key            | Type   | Default                           | Description |
 |----------------|--------|-----------------------------------|-------------|
 | `port`         | string | `"Launchkey Mini LK Mini MIDI"`   | Exact MIDI input port name. Run `python3 -c "import mido; print(mido.get_input_names())"` to list available ports. |
-| `channel_keys` | int    | `0`                               | MIDI channel (0-indexed) used by keyboard keys. `0` = ch1 (InControl mode). `8` = ch9 (normal mode). |
-| `channel_pads` | int    | `9`                               | MIDI channel (0-indexed) used by pads. Always `9` (ch10) on the LaunchKey Mini MK2. |
+| `channel_keys`        | int  | `0`     | MIDI channel (0-indexed) used by keyboard keys. `0` = ch1 (InControl mode). `8` = ch9 (normal mode). |
+| `channel_pads`        | int  | `9`     | MIDI channel (0-indexed) used by pads. Always `9` (ch10) on the LaunchKey Mini MK2. |
+| `enable_key_velocity` | bool | `false` | When `false`, all key note-on events use a fixed velocity of 100, ignoring how hard you press. Set to `true` to use the actual strike velocity from the hardware. |
 
 ---
 
@@ -72,6 +73,20 @@ Hold PadSelect, press one pad (1–9) to select a GM percussion kit, release.
 | 9 | 9 | Sound FX Kit |
 
 Only the pads channel (bank 128) is affected. The keys channel is unchanged.
+
+---
+
+## `[note_challenge]`
+
+Settings for Note Challenge ear-training mode.
+
+| Key          | Type   | Default  | Description |
+|--------------|--------|----------|-------------|
+| `n_notes`    | int    | `4`      | Number of notes in each challenge sequence. |
+| `note_min`   | int    | `48`     | Lowest MIDI note the game will pick (48 = C3). |
+| `note_max`   | int    | `72`     | Highest MIDI note the game will pick (72 = C5). |
+| `entry_pads`  | string | `"16,1"` | Comma-separated pad numbers to press while holding KeySelect to toggle the mode. Pad 16 acts as the bank separator; pads 1–10 contribute digits. Example: `"16,2"` requires Pad 16 then Pad 2. |
+| `bingo_sound` | string | *(none)* | Path to an audio file (MP3, WAV, etc.) played on a correct match. Relative paths resolve from the directory containing `config.toml`. When omitted, falls back to TTS "Bingo" via `SAY_INSTRUMENT`. |
 
 ---
 
