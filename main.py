@@ -10,10 +10,13 @@ import os
 import pathlib
 import subprocess
 import sys
+import threading
+import time
 import tomllib
 from dataclasses import dataclass
 import mido
 import fluidsynth
+from modes import note_challenge
 
 DEBUG = os.environ.get('DEBUG') == '1'
 SAY_INSTRUMENT = os.environ.get('SAY_INSTRUMENT') == '1'
@@ -125,12 +128,61 @@ class ProgramChangeEvent:
     keys_bank: int
     keys_program: int  # 0-indexed
 
+@dataclass
+class EnterNoteChallengeEvent:
+    pass
+
+@dataclass
+class ExitNoteChallengeEvent:
+    pass
+
+@dataclass
+class NoteChallengePlayEvent:
+    pass
+
+@dataclass
+class NoteChallengeNewEvent:
+    pass
+
+@dataclass
+class NoteChallengeHintEvent:
+    pass
+
+@dataclass
+class NoteChallengeBingoEvent:
+    pass
+
 
 # ---------------------------------------------------------------------------
 # Input state (mutated by parse_events)
 # ---------------------------------------------------------------------------
 
-def make_input_state(ch_keys, ch_pads):
+# Pad number → KeySelect digit (matches PAD_NOTE_TO_DIGIT via pad layout)
+_PAD_TO_DIGIT = {1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 8: 8, 9: 9, 10: 0}
+
+
+def parse_entry_pads(pad_str: str):
+    """Parse an entry-pad config string into (digits, bank_sep, bank_digits).
+
+    The string is a comma-separated list of pad numbers.  Pad 16 acts as the
+    bank separator (same role as in KeySelect), and pads 1-10 contribute
+    digits.  Example: "16,1" → ([], True, [1]).
+    """
+    digits: list = []
+    bank_digits: list = []
+    bank_sep = False
+    for part in pad_str.split(','):
+        pad = int(part.strip())
+        if pad == 16:
+            bank_sep = True
+        else:
+            d = _PAD_TO_DIGIT.get(pad)
+            if d is not None:
+                (bank_digits if bank_sep else digits).append(d)
+    return digits, bank_sep, bank_digits
+
+
+def make_input_state(ch_keys, ch_pads, n_notes=4):
     return {
         'ch_keys': ch_keys,
         'ch_pads': ch_pads,
@@ -147,6 +199,15 @@ def make_input_state(ch_keys, ch_pads):
         'pad_select_active': False,
         'pad_select_program': None,        # digit 1-9 pressed during pad select
         'pad_select_captured': set(),
+        # Note Challenge Mode
+        'note_challenge_active': False,
+        'note_challenge_target': [],       # target MIDI note sequence
+        'note_challenge_history': [],      # recent key notes played by user
+        'note_challenge_n': n_notes,       # number of notes in the challenge
+        'note_challenge_min': 48,          # lowest possible note (C3)
+        'note_challenge_max': 72,          # highest possible note (C5)
+        'note_challenge_entry': parse_entry_pads('16,1'),  # (digits, bank_sep, bank_digits)
+        'note_challenge_captured': set(),  # pad notes consumed by the mode
     }
 
 
@@ -178,12 +239,45 @@ def parse_events(msg, state):
                 state['key_select_digits'].append(digit)
             state['key_select_captured'].add(msg.note)
         else:
+            # Note Challenge Mode: intercept pad 1/2/3 for game controls
+            if state['note_challenge_active'] and msg.channel == state['ch_pads']:
+                if msg.note == 40:   # Pad 1 — replay target
+                    state['note_challenge_captured'].add(msg.note)
+                    events.append(NoteChallengePlayEvent())
+                    return events
+                elif msg.note == 41: # Pad 2 — new target
+                    state['note_challenge_captured'].add(msg.note)
+                    events.append(NoteChallengeNewEvent())
+                    return events
+                elif msg.note == 42: # Pad 3 — hint
+                    state['note_challenge_captured'].add(msg.note)
+                    events.append(NoteChallengeHintEvent())
+                    return events
+
             # Reroute hardware key notes to current_keys_channel
             ch = state['current_keys_channel'] if msg.channel == state['ch_keys'] else msg.channel
             # Track the actual output channel so KeySelect can target it
             if msg.channel != state['ch_pads']:
                 state['last_keys_channel'] = ch
             events.append(NoteOnEvent(ch, msg.note, msg.velocity))
+
+            # Note Challenge Mode: track key presses and check for a match
+            if state['note_challenge_active'] and msg.channel == state['ch_keys']:
+                history = state['note_challenge_history']
+                history.append(msg.note)
+                n = state['note_challenge_n']
+                # Keep history bounded
+                if len(history) > n * 4:
+                    state['note_challenge_history'] = history[-(n * 4):]
+                if note_challenge.check_match(history, state['note_challenge_target']):
+                    events.append(NoteChallengeBingoEvent())
+                elif DEBUG:
+                    target = state['note_challenge_target']
+                    recent = history[-n:]
+                    hits = sum(1 for a, b in zip(reversed(recent), reversed(target)) if a == b)
+                    print(f"Note Challenge: played {note_challenge.midi_note_name(msg.note)} "
+                          f"— last {len(recent)}: {note_challenge.note_names_display(recent)} "
+                          f"(target: {note_challenge.note_names_display(target)}, {hits}/{n} trailing match)")
 
     elif msg.type == 'note_off':
         if msg.note in state['channel_select_captured']:
@@ -192,6 +286,8 @@ def parse_events(msg, state):
             state['pad_select_captured'].discard(msg.note)
         elif msg.note in state['key_select_captured']:
             state['key_select_captured'].discard(msg.note)
+        elif msg.note in state['note_challenge_captured']:
+            state['note_challenge_captured'].discard(msg.note)
         else:
             ch = state['current_keys_channel'] if msg.channel == state['ch_keys'] else msg.channel
             events.append(NoteOffEvent(ch, msg.note))
@@ -237,7 +333,16 @@ def parse_events(msg, state):
                 digits = state['key_select_digits']
                 bank_digits = state['key_select_bank_digits']
                 key_select_channel = state['key_select_channel']
-                if digits:
+                # Configured pad sequence: toggle Note Challenge Mode
+                e_digits, e_bank_sep, e_bank_digits = state['note_challenge_entry']
+                if (digits == e_digits
+                        and state['key_select_bank_sep'] == e_bank_sep
+                        and bank_digits == e_bank_digits):
+                    if state['note_challenge_active']:
+                        events.append(ExitNoteChallengeEvent())
+                    else:
+                        events.append(EnterNoteChallengeEvent())
+                elif digits:
                     if key_select_channel == state['ch_pads']:
                         print(
                             "KeySelect ignored: "
@@ -266,16 +371,27 @@ def parse_events(msg, state):
 # App events → synth
 # ---------------------------------------------------------------------------
 
-def speak(text):
+def speak(text, wait=False):
     if not SAY_INSTRUMENT:
         return
     try:
-        if sys.platform == 'darwin':
-            subprocess.Popen(['say', text])
-        else:
-            subprocess.Popen(['espeak', text])
+        cmd = ['say', text] if sys.platform == 'darwin' else ['espeak', text]
+        proc = subprocess.Popen(cmd)
+        if wait:
+            proc.wait()
     except Exception as e:
         print(f"Warning: TTS failed: {e}")
+
+
+def play_sound(path, wait=False):
+    """Play an audio file using afplay (macOS) or mpg123 (Linux)."""
+    try:
+        cmd = ['afplay', str(path)] if sys.platform == 'darwin' else ['mpg123', '--quiet', str(path)]
+        proc = subprocess.Popen(cmd)
+        if wait:
+            proc.wait()
+    except Exception as e:
+        print(f"Warning: audio playback failed: {e}")
 
 
 def program_select_with_fallback(fs, channel, sfid, bank, program):
@@ -286,14 +402,15 @@ def program_select_with_fallback(fs, channel, sfid, bank, program):
     return bank
 
 
-def handle_event(event, fs, ch_keys, ch_pads, sfid):
+def handle_event(event, fs, ch_keys, ch_pads, sfid, state):
     if isinstance(event, NoteOnEvent):
+        vel = event.velocity if state.get('enable_key_velocity') else 100
         if DEBUG:
-            print(f"note_on  ch={event.channel} note={event.note} vel={event.velocity}")
-        fs.noteon(event.channel, event.note, event.velocity)
+            print(f"note_on  ch={event.channel} note={event.note} ({note_challenge.midi_note_name(event.note)}) vel={vel}")
+        fs.noteon(event.channel, event.note, vel)
     elif isinstance(event, NoteOffEvent):
         if DEBUG:
-            print(f"note_off ch={event.channel} note={event.note}")
+            print(f"note_off ch={event.channel} note={event.note} ({note_challenge.midi_note_name(event.note)})")
         fs.noteoff(event.channel, event.note)
     elif isinstance(event, PitchBendEvent):
         fs.pitch_bend(event.channel, event.pitch)
@@ -319,6 +436,48 @@ def handle_event(event, fs, ch_keys, ch_pads, sfid):
         else:
             print(f"Program: ch{event.channel + 1} bank={event.keys_bank} program={event.keys_program + 1} name={name}")
         speak(name)
+    elif isinstance(event, EnterNoteChallengeEvent):
+        state['note_challenge_active'] = True
+        state['note_challenge_history'] = []
+        target = note_challenge.generate_target(state['note_challenge_n'], state['note_challenge_min'], state['note_challenge_max'])
+        state['note_challenge_target'] = target
+        print(f"Note Challenge Mode: target={note_challenge.note_names_display(target)}")
+        def _announce_then_play(t=target):
+            speak("Note Challenge Mode", wait=True)
+            note_challenge.play_notes_async(t, ch_keys, fs)
+        threading.Thread(target=_announce_then_play, daemon=True).start()
+    elif isinstance(event, ExitNoteChallengeEvent):
+        state['note_challenge_active'] = False
+        state['note_challenge_history'] = []
+        print("Note Challenge Mode: exited")
+        speak("Goodbye")
+    elif isinstance(event, NoteChallengePlayEvent):
+        note_challenge.play_notes_async(state['note_challenge_target'], ch_keys, fs)
+    elif isinstance(event, NoteChallengeNewEvent):
+        target = note_challenge.generate_target(state['note_challenge_n'], state['note_challenge_min'], state['note_challenge_max'])
+        state['note_challenge_target'] = target
+        state['note_challenge_history'] = []
+        print(f"Note Challenge Mode: new target={note_challenge.note_names_display(target)}")
+        note_challenge.play_notes_async(target, ch_keys, fs)
+    elif isinstance(event, NoteChallengeHintEvent):
+        text = note_challenge.note_names_tts(state['note_challenge_target'])
+        display = note_challenge.note_names_display(state['note_challenge_target'])
+        print(f"Note Challenge Mode: hint={display}")
+        speak(text)
+    elif isinstance(event, NoteChallengeBingoEvent):
+        print("Note Challenge Mode: Bingo!")
+        target = note_challenge.generate_target(state['note_challenge_n'], state['note_challenge_min'], state['note_challenge_max'])
+        state['note_challenge_target'] = target
+        state['note_challenge_history'] = []
+        print(f"Note Challenge Mode: new target={note_challenge.note_names_display(target)}")
+        bingo_sound = state.get('note_challenge_bingo_sound')
+        def _bingo_then_play(t=target, sound=bingo_sound):
+            if sound:
+                play_sound(sound, wait=True)
+            else:
+                speak("Bingo", wait=True)
+            note_challenge.play_notes_async(t, ch_keys, fs)
+        threading.Thread(target=_bingo_then_play, daemon=True).start()
 
 
 # ---------------------------------------------------------------------------
@@ -331,9 +490,10 @@ def load_config():
 
 
 def main():
-    cfg        = load_config()
-    midi_cfg   = cfg.get('midi', {})
-    synth_cfg  = cfg.get('synth', {})
+    cfg           = load_config()
+    midi_cfg      = cfg.get('midi', {})
+    synth_cfg     = cfg.get('synth', {})
+    challenge_cfg = cfg.get('note_challenge', {})
 
     port    = midi_cfg.get('port', 'Launchkey Mini LK Mini MIDI')
     ch_keys = midi_cfg.get('channel_keys', 0)
@@ -376,13 +536,26 @@ def main():
     print(f"Pads       : ch{ch_pads + 1}")
     print("Ctrl-C to quit\n")
 
-    state = make_input_state(ch_keys, ch_pads)
+    n_notes = challenge_cfg.get('n_notes', 4)
+    state = make_input_state(ch_keys, ch_pads, n_notes=n_notes)
+    state['note_challenge_min'] = challenge_cfg.get('note_min', 48)
+    state['note_challenge_max'] = challenge_cfg.get('note_max', 72)
+    state['note_challenge_entry'] = parse_entry_pads(challenge_cfg.get('entry_pads', '16,1'))
+    _bingo_sound = challenge_cfg.get('bingo_sound')
+    if _bingo_sound:
+        _bingo_path = pathlib.Path(_bingo_sound)
+        if not _bingo_path.is_absolute():
+            _bingo_path = pathlib.Path(__file__).parent / _bingo_path
+        state['note_challenge_bingo_sound'] = str(_bingo_path.expanduser())
+    else:
+        state['note_challenge_bingo_sound'] = None
+    state['enable_key_velocity'] = midi_cfg.get('enable_key_velocity', False)
 
     try:
         with mido.open_input(port) as inport:
             for msg in inport:
                 for event in parse_events(msg, state):
-                    handle_event(event, fs, ch_keys, ch_pads, sfid)
+                    handle_event(event, fs, ch_keys, ch_pads, sfid, state)
     except KeyboardInterrupt:
         print("Goodbye!")
     finally:
