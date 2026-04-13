@@ -6,9 +6,10 @@
 # MIDI device settings
 # -----------------------------------------------------------------------------
 [midi]
-port         = "Launchkey Mini LK Mini MIDI"
-channel_keys = 0   # MIDI channel 1, 0-indexed — keys send ch1 in InControl mode
-channel_pads = 9   # MIDI channel 10, 0-indexed — pads always use ch10 (GM percussion)
+port                = "Launchkey Mini LK Mini MIDI"
+channel_keys        = 0      # MIDI channel 1, 0-indexed — keys send ch1 in InControl mode
+channel_pads        = 9      # MIDI channel 10, 0-indexed — pads always use ch10 (GM percussion)
+enable_key_velocity = false  # if false, all key notes play at velocity 100
 
 # -----------------------------------------------------------------------------
 # FluidSynth engine settings
@@ -17,3 +18,13 @@ channel_pads = 9   # MIDI channel 10, 0-indexed — pads always use ch10 (GM per
 soundfont = "soundfonts/OmegaGMGS2.sf2"   # relative to this file, or absolute
 gain      = 1.5
 driver    = "coreaudio"   # macOS: "coreaudio"; Linux: "alsa" or "pulseaudio"
+
+# -----------------------------------------------------------------------------
+# Note Challenge Mode settings
+# -----------------------------------------------------------------------------
+[note_challenge]
+n_notes     = 3      # number of notes in each challenge sequence
+note_min    = 48     # lowest note: 48 = C3
+note_max    = 72     # highest note: 72 = C5
+entry_pads  = "16,1" # KeySelect pad sequence to enter/exit the mode
+bingo_sound = "assets/freesound_community-078834_child39s-xylophone-2-88465.mp3"  # played on correct match; omit to use TTS

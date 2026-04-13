@@ -449,6 +449,31 @@ Pad sequence uses pad numbers 1–9, **10** (digit 0), and **16** (bank separato
 
 </details>
 
+### Note Challenge Mode — ear training
+
+Note Challenge Mode is a built-in ear-training game. The synthesizer plays a random sequence of notes and you must reproduce it on the keys.
+
+**Enter the mode:** Hold **KeySelect** (Scene Down), press **Pad 16**, then **Pad 1**, then release KeySelect.
+
+Once active, the target sequence plays automatically. Use pads to control the game:
+
+| Pad | Action |
+|-----|--------|
+| Pad 1 | Play the target sequence again |
+| Pad 2 | Generate a new target sequence |
+| Pad 3 | Say the note names aloud as a hint |
+
+Play the sequence on the keys. When the last N notes you played match the target sequence in order, the synthesizer says **"Bingo"** and advances to a new sequence.
+
+**Exit:** hold KeySelect, press Pad 16, press Pad 1, release KeySelect (same gesture as entry — it toggles).
+
+The number of notes in each sequence is configurable (default 3):
+
+```toml
+[note_challenge]
+n_notes = 3
+```
+
 ### PadSelect — change the drum kit
 
 Hold the **Scene Up** button (PadSelect), press one pad (1–9) to select a GM percussion kit, then release:
