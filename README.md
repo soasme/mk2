@@ -1,5 +1,12 @@
 # mk2 — LaunchKey Mini MK2 Synthesizer
 
+> My 4yo son found a Novation LaunchKey Mini keyboard in the garage and ask me
+> why it's not making sound. Hence this app. Instead of playing around
+> complicated DAW for professional musicians and increasing screen team,
+> this app is running as a simple script. It allows toddler to explore
+> beats, different GM sounds, ear training, etc. I don't plan to support any other
+> MIDI keyboards (or even MK3, MK4 or whatever).
+
 A real-time synthesizer for the Novation LaunchKey Mini MK2. Plays GM instruments through the keyboard keys and GM percussion through the pads, powered by FluidSynth and a SoundFont file.
 
 ## Prerequisites
@@ -37,7 +44,7 @@ Download a SoundFont into `soundfonts/`:
 | **MuseScore General** | ~200 MB | GM1 | `curl -L "https://musical-artifacts.com/artifacts/3001/MS_Basic.sf2" -o soundfonts/MS_Basic.sf2` |
 | **OmegaGMGS2 GM** | ~119MB | GM2 | Check <https://musescore.org/en/node/109371> |
 
-GM1 fonts work fine — pad sequences must end with **Pad 10** (bank 0). GM2 fonts additionally support alternate banks (end with Pad 1–9).
+GM1 fonts work fine. GM2 fonts additionally support alternate banks (Pad16, end with Pad 1–9).
 
 If you use a different file, update `config.toml` to point at it:
 
