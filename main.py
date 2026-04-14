@@ -417,6 +417,10 @@ def handle_event(event, fs, ch_keys, ch_pads, sfid, state):
     elif isinstance(event, CCEvent):
         fs.cc(event.channel, event.control, event.value)
     elif isinstance(event, PercussionChangeEvent):
+        if state['note_challenge_active']:
+            state['note_challenge_active'] = False
+            state['note_challenge_history'] = []
+            print("Note Challenge Mode: exited (drum kit changed)")
         actual_bank = program_select_with_fallback(fs, ch_pads, sfid, 128, event.pads_program)
         name = gm_name(actual_bank, event.pads_program)
         fallback = actual_bank != 128
@@ -426,6 +430,10 @@ def handle_event(event, fs, ch_keys, ch_pads, sfid, state):
             print(f"Percussion: program={event.pads_program + 1} name={name}")
         speak(name)
     elif isinstance(event, ProgramChangeEvent):
+        if state['note_challenge_active']:
+            state['note_challenge_active'] = False
+            state['note_challenge_history'] = []
+            print("Note Challenge Mode: exited (tone changed)")
         actual_bank = program_select_with_fallback(fs, event.channel, sfid, event.keys_bank, event.keys_program)
         fs.cc(event.channel, 7, 127)
         fs.cc(event.channel, 11, 127)
@@ -449,7 +457,6 @@ def handle_event(event, fs, ch_keys, ch_pads, sfid, state):
     elif isinstance(event, ExitNoteChallengeEvent):
         state['note_challenge_active'] = False
         state['note_challenge_history'] = []
-        print("Note Challenge Mode: exited")
         speak("Goodbye")
     elif isinstance(event, NoteChallengePlayEvent):
         note_challenge.play_notes_async(state['note_challenge_target'], ch_keys, fs)
