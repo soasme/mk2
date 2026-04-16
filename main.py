@@ -16,7 +16,7 @@ import tomllib
 from dataclasses import dataclass
 import mido
 import fluidsynth
-from modes import note_challenge
+from modes import chord_learning, note_challenge
 
 DEBUG = os.environ.get('DEBUG') == '1'
 SAY_INSTRUMENT = os.environ.get('SAY_INSTRUMENT') == '1'
@@ -455,6 +455,10 @@ def handle_event(event, fs, ch_keys, ch_pads, sfid, state):
             state['note_challenge_active'] = False
             state['note_challenge_history'] = []
             print("Note Challenge Mode: exited (drum kit changed)")
+        if state['chord_learning_active']:
+            state['chord_learning_active'] = False
+            state['chord_learning_held'] = set()
+            print("Chord Learning Mode: exited (drum kit changed)")
         actual_bank = program_select_with_fallback(fs, ch_pads, sfid, 128, event.pads_program)
         name = gm_name(actual_bank, event.pads_program)
         fallback = actual_bank != 128
@@ -468,6 +472,10 @@ def handle_event(event, fs, ch_keys, ch_pads, sfid, state):
             state['note_challenge_active'] = False
             state['note_challenge_history'] = []
             print("Note Challenge Mode: exited (tone changed)")
+        if state['chord_learning_active']:
+            state['chord_learning_active'] = False
+            state['chord_learning_held'] = set()
+            print("Chord Learning Mode: exited (tone changed)")
         actual_bank = program_select_with_fallback(fs, event.channel, sfid, event.keys_bank, event.keys_program)
         fs.cc(event.channel, 7, 127)
         fs.cc(event.channel, 11, 127)
@@ -519,6 +527,21 @@ def handle_event(event, fs, ch_keys, ch_pads, sfid, state):
                 speak("Bingo", wait=True)
             note_challenge.play_notes_async(t, ch_keys, fs)
         threading.Thread(target=_bingo_then_play, daemon=True).start()
+    elif isinstance(event, EnterChordLearningEvent):
+        state['chord_learning_active'] = True
+        state['chord_learning_held'] = set()
+        print("Chord Learning Mode: active")
+        speak("Chord Learning Mode")
+    elif isinstance(event, ExitChordLearningEvent):
+        state['chord_learning_active'] = False
+        state['chord_learning_held'] = set()
+        print("Chord Learning Mode: exited")
+        speak("Goodbye")
+    elif isinstance(event, ChordLearningNoteChangedEvent):
+        name = chord_learning.identify_chord(event.held, state['chord_learning_chord_set'])
+        if name:
+            print(f"Chord Learning Mode: {name}")
+            speak(name)
 
 
 # ---------------------------------------------------------------------------
