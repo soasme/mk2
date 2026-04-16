@@ -23,8 +23,16 @@ driver    = "coreaudio"   # macOS: "coreaudio"; Linux: "alsa" or "pulseaudio"
 # Note Challenge Mode settings
 # -----------------------------------------------------------------------------
 [note_challenge]
-n_notes     = 3      # number of notes in each challenge sequence
+n_notes     = 1      # number of notes in each challenge sequence
 note_min    = 48     # lowest note: 48 = C3
 note_max    = 72     # highest note: 72 = C5
 entry_pads  = "16,1" # KeySelect pad sequence to enter/exit the mode
 bingo_sound = "assets/freesound_community-078834_child39s-xylophone-2-88465.mp3"  # played on correct match; omit to use TTS
+
+# -----------------------------------------------------------------------------
+# Chord Learning Mode settings
+# -----------------------------------------------------------------------------
+[chord_learning]
+entry_pads     = "16,2"      # KeySelect pad sequence to enter/exit the mode
+chord_set      = "extended"  # "minimal", "core_set", or "extended"
+announce_delay = 0.2         # seconds to wait after the last note change before speaking
