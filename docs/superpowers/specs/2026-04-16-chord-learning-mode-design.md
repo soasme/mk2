@@ -55,12 +55,15 @@ Root names use flat spelling for TTS: C, D flat, D, E flat, E, F, G flat, G, A f
 
 Configured via `chord_set` in `[chord_learning]`. Three levels:
 
+**Note: interval tuples are computed from sorted pitch classes (consecutive differences), not stacked thirds.**
+
 ### minimal
-Triads only + 2-note intervals:
+All 2-note intervals + 6 triads:
 
 | Interval tuple | Name |
 |---|---|
-| `(2,)` | minor second |
+| `(1,)` | minor second |
+| `(2,)` | major second |
 | `(3,)` | minor third |
 | `(4,)` | major third |
 | `(5,)` | perfect fourth |
@@ -74,6 +77,8 @@ Triads only + 2-note intervals:
 | `(3, 4)` | minor |
 | `(3, 3)` | diminished |
 | `(4, 4)` | augmented |
+| `(2, 5)` | suspended second |
+| `(5, 2)` | suspended fourth |
 
 ### core_set (default)
 Everything in minimal, plus:
@@ -95,14 +100,10 @@ Everything in core_set, plus:
 |---|---|
 | `(4, 3, 2)` | major sixth |
 | `(3, 4, 2)` | minor sixth |
-| `(4, 3, 3, 4)` | dominant ninth |
-| `(4, 3, 4, 3)` | major ninth |
-| `(3, 4, 3, 4)` | minor ninth |
-| `(4, 3, 3, 3)` | dominant seventh flat nine |
-| `(4, 3, 7)` | add nine |
-| `(4, 3, 3, 7)` | dominant eleventh |
-| `(4, 3, 4, 3, 3)` | major thirteenth |
-| `(3, 4, 3, 4, 3)` | minor thirteenth |
+| `(2, 2, 3)` | add nine |
+| `(2, 2, 3, 3)` | dominant ninth |
+| `(2, 2, 3, 4)` | major ninth |
+| `(2, 1, 4, 3)` | minor ninth |
 
 ---
 
