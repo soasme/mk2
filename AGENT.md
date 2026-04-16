@@ -114,7 +114,7 @@ Logic is in `modes/note_challenge.py` (pure functions, no I/O). Orchestration is
 
 A real-time chord identification tool. While active, holding 2 or more keys simultaneously announces the chord name aloud via TTS (e.g., "C Major", "B flat minor seventh, first inversion", "G perfect fifth").
 
-Entry/exit: hold KeySelect and press the pad sequence configured in `chord_learning.entry_pads` (default `16,2`).
+Entry/reset: hold KeySelect and press the pad sequence configured in `chord_learning.entry_pads` (default `16,2`). Repeating the gesture while already active clears held notes and restarts the mode instead of exiting it.
 
 While active:
 - Key notes still play normally through FluidSynth

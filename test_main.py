@@ -229,7 +229,7 @@ class ChordLearningParseEventsTests(unittest.TestCase):
         self.assertEqual(len(events), 1)
         self.assertIsInstance(events[0], main.EnterChordLearningEvent)
 
-    def test_exit_chord_learning_mode(self):
+    def test_reenter_chord_learning_mode_when_already_active(self):
         state = main.make_input_state(ch_keys=0, ch_pads=9)
         state['chord_learning_active'] = True
         with contextlib.redirect_stdout(io.StringIO()):
@@ -239,7 +239,7 @@ class ChordLearningParseEventsTests(unittest.TestCase):
             events = main.parse_events(msg('control_change', control=main.CC_KEY_SELECT, value=0), state)
 
         self.assertEqual(len(events), 1)
-        self.assertIsInstance(events[0], main.ExitChordLearningEvent)
+        self.assertIsInstance(events[0], main.EnterChordLearningEvent)
 
     def test_note_on_adds_to_held_and_emits_changed_event(self):
         state = main.make_input_state(ch_keys=0, ch_pads=9)

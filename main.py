@@ -382,10 +382,7 @@ def parse_events(msg, state):
                 elif (digits == cl_digits
                         and state['key_select_bank_sep'] == cl_bank_sep
                         and bank_digits == cl_bank_digits):
-                    if state['chord_learning_active']:
-                        events.append(ExitChordLearningEvent())
-                    else:
-                        events.append(EnterChordLearningEvent())
+                    events.append(EnterChordLearningEvent())
                 elif digits:
                     if key_select_channel == state['ch_pads']:
                         print(

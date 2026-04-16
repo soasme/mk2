@@ -487,6 +487,8 @@ Chord Learning Mode identifies the currently held chord after your notes settle,
 
 **Enter the mode:** Hold **KeySelect** (Scene Down), press **Pad 16**, then **Pad 2**, then release KeySelect.
 
+Use the same gesture again to reset Chord Learning Mode to a clean state. It does not speak "Goodbye" or toggle the mode off.
+
 While active, keys still play normally. The app waits a short delay after the last note-on or note-off before announcing the chord, which avoids hearing every intermediate partial chord while you are still pressing notes.
 
 If you want more time before it speaks, increase the delay:
