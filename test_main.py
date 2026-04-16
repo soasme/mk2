@@ -180,5 +180,87 @@ class ChordLearningTests(unittest.TestCase):
         self.assertIsNone(chord_learning.identify_chord(frozenset({60, 64, 67, 70}), 'minimal'))
 
 
+class ChordLearningParseEventsTests(unittest.TestCase):
+    def test_chord_learning_state_defaults(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        self.assertFalse(state['chord_learning_active'])
+        self.assertEqual(state['chord_learning_held'], set())
+        self.assertEqual(state['chord_learning_chord_set'], 'core_set')
+        # entry = parse_entry_pads('16,2') = ([], True, [2])
+        self.assertEqual(state['chord_learning_entry'], ([], True, [2]))
+
+    def test_enter_chord_learning_mode(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        # Hold KeySelect
+        with contextlib.redirect_stdout(io.StringIO()):
+            main.parse_events(msg('control_change', control=main.CC_KEY_SELECT, value=127), state)
+            # Press Pad 16 (note 47) then Pad 2 (note 41)
+            main.parse_events(msg('note_on', note=47, velocity=127, channel=state['ch_pads']), state)
+            main.parse_events(msg('note_on', note=41, velocity=127, channel=state['ch_pads']), state)
+            events = main.parse_events(msg('control_change', control=main.CC_KEY_SELECT, value=0), state)
+
+        self.assertEqual(len(events), 1)
+        self.assertIsInstance(events[0], main.EnterChordLearningEvent)
+
+    def test_exit_chord_learning_mode(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['chord_learning_active'] = True
+        with contextlib.redirect_stdout(io.StringIO()):
+            main.parse_events(msg('control_change', control=main.CC_KEY_SELECT, value=127), state)
+            main.parse_events(msg('note_on', note=47, velocity=127, channel=state['ch_pads']), state)
+            main.parse_events(msg('note_on', note=41, velocity=127, channel=state['ch_pads']), state)
+            events = main.parse_events(msg('control_change', control=main.CC_KEY_SELECT, value=0), state)
+
+        self.assertEqual(len(events), 1)
+        self.assertIsInstance(events[0], main.ExitChordLearningEvent)
+
+    def test_note_on_adds_to_held_and_emits_changed_event(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['chord_learning_active'] = True
+
+        events = main.parse_events(
+            msg('note_on', note=60, velocity=100, channel=state['ch_keys']), state
+        )
+
+        # NoteOnEvent is still emitted (note still plays)
+        note_on_events = [e for e in events if isinstance(e, main.NoteOnEvent)]
+        self.assertEqual(len(note_on_events), 1)
+        self.assertEqual(note_on_events[0].note, 60)
+
+        # ChordLearningNoteChangedEvent is also emitted
+        changed_events = [e for e in events if isinstance(e, main.ChordLearningNoteChangedEvent)]
+        self.assertEqual(len(changed_events), 1)
+        self.assertEqual(changed_events[0].held, frozenset({60}))
+
+        # State updated
+        self.assertIn(60, state['chord_learning_held'])
+
+    def test_note_off_removes_from_held_and_emits_changed_event(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['chord_learning_active'] = True
+        state['chord_learning_held'] = {60, 64}
+
+        events = main.parse_events(
+            msg('note_off', note=60, channel=state['ch_keys']), state
+        )
+
+        changed_events = [e for e in events if isinstance(e, main.ChordLearningNoteChangedEvent)]
+        self.assertEqual(len(changed_events), 1)
+        self.assertEqual(changed_events[0].held, frozenset({64}))
+        self.assertNotIn(60, state['chord_learning_held'])
+
+    def test_chord_learning_does_not_intercept_pad_notes(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['chord_learning_active'] = True
+
+        events = main.parse_events(
+            msg('note_on', note=40, velocity=100, channel=state['ch_pads']), state
+        )
+
+        changed_events = [e for e in events if isinstance(e, main.ChordLearningNoteChangedEvent)]
+        self.assertEqual(len(changed_events), 0)
+        self.assertEqual(state['chord_learning_held'], set())
+
+
 if __name__ == '__main__':
     unittest.main()

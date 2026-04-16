@@ -152,6 +152,18 @@ class NoteChallengeHintEvent:
 class NoteChallengeBingoEvent:
     pass
 
+@dataclass
+class EnterChordLearningEvent:
+    pass
+
+@dataclass
+class ExitChordLearningEvent:
+    pass
+
+@dataclass
+class ChordLearningNoteChangedEvent:
+    held: frozenset  # current set of held MIDI notes
+
 
 # ---------------------------------------------------------------------------
 # Input state (mutated by parse_events)
@@ -208,6 +220,11 @@ def make_input_state(ch_keys, ch_pads, n_notes=4):
         'note_challenge_max': 72,          # highest possible note (C5)
         'note_challenge_entry': parse_entry_pads('16,1'),  # (digits, bank_sep, bank_digits)
         'note_challenge_captured': set(),  # pad notes consumed by the mode
+        # Chord Learning Mode
+        'chord_learning_active': False,
+        'chord_learning_held': set(),
+        'chord_learning_entry': parse_entry_pads('16,2'),
+        'chord_learning_chord_set': 'core_set',
     }
 
 
