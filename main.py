@@ -558,6 +558,7 @@ def main():
     midi_cfg      = cfg.get('midi', {})
     synth_cfg     = cfg.get('synth', {})
     challenge_cfg = cfg.get('note_challenge', {})
+    cl_cfg        = cfg.get('chord_learning', {})
 
     port    = midi_cfg.get('port', 'Launchkey Mini LK Mini MIDI')
     ch_keys = midi_cfg.get('channel_keys', 0)
@@ -605,6 +606,8 @@ def main():
     state['note_challenge_min'] = challenge_cfg.get('note_min', 48)
     state['note_challenge_max'] = challenge_cfg.get('note_max', 72)
     state['note_challenge_entry'] = parse_entry_pads(challenge_cfg.get('entry_pads', '16,1'))
+    state['chord_learning_entry'] = parse_entry_pads(cl_cfg.get('entry_pads', '16,2'))
+    state['chord_learning_chord_set'] = cl_cfg.get('chord_set', 'core_set')
     _bingo_sound = challenge_cfg.get('bingo_sound')
     if _bingo_sound:
         _bingo_path = pathlib.Path(_bingo_sound)

@@ -28,3 +28,10 @@ note_min    = 48     # lowest note: 48 = C3
 note_max    = 72     # highest note: 72 = C5
 entry_pads  = "16,1" # KeySelect pad sequence to enter/exit the mode
 bingo_sound = "assets/freesound_community-078834_child39s-xylophone-2-88465.mp3"  # played on correct match; omit to use TTS
+
+# -----------------------------------------------------------------------------
+# Chord Learning Mode settings
+# -----------------------------------------------------------------------------
+[chord_learning]
+entry_pads = "16,2"      # KeySelect pad sequence to enter/exit the mode
+chord_set  = "core_set"  # "minimal", "core_set", or "extended"
