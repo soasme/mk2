@@ -41,6 +41,7 @@ LaunchKey Mini MK2 (USB)
 | `main.py`                   | Entry point — config load, FluidSynth init, MIDI event loop |
 | `config.toml`               | Runtime configuration — MIDI ports, SoundFont path, GM bank/program, Note Challenge settings |
 | `modes/note_challenge.py`   | Note Challenge ear-training game logic (pure helpers, no I/O) |
+| `modes/chord_learning.py`   | Chord Learning Mode — interval-set chord detection (pure functions, no I/O) |
 | `modes/__init__.py`         | Package marker |
 | `Brewfile`                  | Homebrew dependencies (`brew bundle` installs `fluid-synth`) |
 | `CONFIGURATION.md`          | Reference for every config.toml option |
@@ -70,6 +71,9 @@ Exception: `note_challenge.play_notes_async` spawns a short-lived daemon thread 
 | `note_challenge_active` | True when Note Challenge mode is running |
 | `note_challenge_target` | Random note sequence the player must reproduce |
 | `note_challenge_history` | Recent key notes played (bounded ring buffer) |
+| `chord_learning_active` | True when Chord Learning Mode is running |
+| `chord_learning_held` | Set of currently held MIDI note numbers |
+| `chord_learning_chord_set` | Active chord recognition set name |
 
 ## Scene Button Controls
 
@@ -101,6 +105,22 @@ While active:
 Configuration in `config.toml` under `[note_challenge]`: `n_notes`, `note_min`, `note_max`, `entry_pads`, `bingo_sound`.
 
 Logic is in `modes/note_challenge.py` (pure functions, no I/O). Orchestration is in `handle_event` in `main.py`.
+
+## Chord Learning Mode
+
+A real-time chord identification tool. While active, holding 2 or more keys simultaneously announces the chord name aloud via TTS (e.g., "C Major", "B flat minor seventh, first inversion", "G perfect fifth").
+
+Entry/exit: hold KeySelect and press the pad sequence configured in `chord_learning.entry_pads` (default `16,2`).
+
+While active:
+- Key notes still play normally through FluidSynth
+- Every change to the set of held keys triggers chord detection
+- If the held notes form a recognized chord, its name is spoken via TTS
+- Unrecognized combinations produce no output
+
+Configuration in `config.toml` under `[chord_learning]`: `entry_pads`, `chord_set` (`"minimal"`, `"core_set"`, `"extended"`).
+
+Logic is in `modes/chord_learning.py` (pure functions, no I/O). Orchestration is in `handle_event` in `main.py`.
 
 ## SoundFont and GM Programs
 
