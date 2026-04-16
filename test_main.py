@@ -96,7 +96,7 @@ class ChordLearningTests(unittest.TestCase):
 
     def test_c_major_first_inversion(self):
         # E4=64 is bass, C4=60, G4=67
-        self.assertEqual(chord_learning.identify_chord(frozenset({60, 64, 67}), 'core_set', bass_override=64), 'C Major, first inversion')
+        self.assertEqual(chord_learning.identify_chord(frozenset({60, 64, 67}), 'core_set', _bass_override=64), 'C Major, first inversion')
 
     def test_c_minor_root_position(self):
         # C4=60, Eb4=63, G4=67
@@ -136,9 +136,9 @@ class ChordLearningTests(unittest.TestCase):
         self.assertEqual(chord_learning.identify_chord(frozenset({60, 63, 67, 70}), 'core_set'), 'C minor seventh')
 
     def test_minor_seventh_second_inversion(self):
-        # G is bass (67), C4=60, Eb4=63, Bb4=70; bass_override=67
+        # G is bass (67), C4=60, Eb4=63, Bb4=70; _bass_override=67
         self.assertEqual(
-            chord_learning.identify_chord(frozenset({60, 63, 67, 70}), 'core_set', bass_override=67),
+            chord_learning.identify_chord(frozenset({60, 63, 67, 70}), 'core_set', _bass_override=67),
             'C minor seventh, second inversion'
         )
 

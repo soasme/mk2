@@ -70,23 +70,23 @@ def _interval_tuple(notes: list[int]) -> tuple[int, ...]:
     return tuple(notes[i + 1] - notes[i] for i in range(len(notes) - 1))
 
 
-def identify_chord(held_notes: frozenset, chord_set: str, bass_override: int | None = None) -> str | None:
+def identify_chord(held_notes: frozenset, chord_set: str, _bass_override: int | None = None) -> str | None:
     """Return a TTS chord name for the held notes, or None if unrecognized.
 
     Args:
         held_notes: Set of held MIDI note numbers.
         chord_set: One of 'minimal', 'core_set', 'extended'.
-        bass_override: If given, use this MIDI note as the bass instead of min(held_notes).
-                       Used only for testing; in production the bass is always min(held_notes).
+        _bass_override: If given, use this MIDI note as the bass instead of min(held_notes).
+                        Used only for testing; in production the bass is always min(held_notes).
     """
-    if len(held_notes) < 2:
+    pcs = sorted(set(n % 12 for n in held_notes))
+    if len(pcs) < 2:
         return None
 
     table = CHORD_SETS.get(chord_set, CHORD_SETS['core_set'])
-    pcs = sorted(set(n % 12 for n in held_notes))
     n = len(pcs)
 
-    bass_note = bass_override if bass_override is not None else min(held_notes)
+    bass_note = _bass_override if _bass_override is not None else min(held_notes)
     bass_pc = bass_note % 12
 
     for i in range(n):
