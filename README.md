@@ -481,6 +481,21 @@ The number of notes in each sequence is configurable (default 3):
 n_notes = 3
 ```
 
+### Chord Learning Mode
+
+Chord Learning Mode identifies the currently held chord after your notes settle, then speaks the result via TTS.
+
+**Enter the mode:** Hold **KeySelect** (Scene Down), press **Pad 16**, then **Pad 2**, then release KeySelect.
+
+While active, keys still play normally. The app waits a short delay after the last note-on or note-off before announcing the chord, which avoids hearing every intermediate partial chord while you are still pressing notes.
+
+If you want more time before it speaks, increase the delay:
+
+```toml
+[chord_learning]
+announce_delay = 0.35
+```
+
 ### PadSelect — change the drum kit
 
 Hold the **Scene Up** button (PadSelect), press one pad (1–9) to select a GM percussion kit, then release:

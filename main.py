@@ -8,6 +8,7 @@ Event flow:
 """
 import os
 import pathlib
+import re
 import subprocess
 import sys
 import threading
@@ -163,6 +164,7 @@ class ExitChordLearningEvent:
 @dataclass
 class ChordLearningNoteChangedEvent:
     held: frozenset  # current set of held MIDI notes
+    is_release: bool  # whether this change came from a note-off
 
 
 # ---------------------------------------------------------------------------
@@ -225,6 +227,8 @@ def make_input_state(ch_keys, ch_pads, n_notes=4):
         'chord_learning_held': set(),
         'chord_learning_entry': parse_entry_pads('16,2'),
         'chord_learning_chord_set': 'core_set',
+        'chord_learning_announce_delay': 0.2,  # seconds to wait after last key change
+        'chord_learning_announce_timer': None,  # pending threading.Timer
     }
 
 
@@ -299,7 +303,10 @@ def parse_events(msg, state):
             # Chord Learning Mode: track held notes
             if state['chord_learning_active'] and msg.channel == state['ch_keys']:
                 state['chord_learning_held'].add(msg.note)
-                events.append(ChordLearningNoteChangedEvent(held=frozenset(state['chord_learning_held'])))
+                events.append(ChordLearningNoteChangedEvent(
+                    held=frozenset(state['chord_learning_held']),
+                    is_release=False,
+                ))
 
     elif msg.type == 'note_off':
         if msg.note in state['channel_select_captured']:
@@ -316,7 +323,10 @@ def parse_events(msg, state):
             # Chord Learning Mode: update held notes
             if state['chord_learning_active'] and msg.channel == state['ch_keys']:
                 state['chord_learning_held'].discard(msg.note)
-                events.append(ChordLearningNoteChangedEvent(held=frozenset(state['chord_learning_held'])))
+                events.append(ChordLearningNoteChangedEvent(
+                    held=frozenset(state['chord_learning_held']),
+                    is_release=True,
+                ))
 
     elif msg.type == 'control_change':
         if CC_CHANNEL_SELECT is not None and msg.control == CC_CHANNEL_SELECT:
@@ -409,12 +419,20 @@ def speak(text, wait=False):
     if not SAY_INSTRUMENT:
         return
     try:
-        cmd = ['say', text] if sys.platform == 'darwin' else ['espeak', text]
+        if sys.platform == 'darwin':
+            cmd = ['say', normalize_say_text(text)]
+        else:
+            cmd = ['espeak', text]
         proc = subprocess.Popen(cmd)
         if wait:
             proc.wait()
     except Exception as e:
         print(f"Warning: TTS failed: {e}")
+
+
+def normalize_say_text(text: str) -> str:
+    """Make standalone A speak as a letter on macOS `say`."""
+    return re.sub(r'\bA\b', 'A.', text)
 
 
 def play_sound(path, wait=False):
@@ -434,6 +452,43 @@ def program_select_with_fallback(fs, channel, sfid, bank, program):
         fs.program_select(channel, sfid, 0, program)
         return 0
     return bank
+
+
+def cancel_chord_learning_announce_timer(state):
+    """Cancel any pending chord-learning announcement."""
+    timer = state.get('chord_learning_announce_timer')
+    if timer is not None:
+        timer.cancel()
+        state['chord_learning_announce_timer'] = None
+
+
+def schedule_chord_learning_announcement(state, held):
+    """Debounce chord-learning announcements until held notes settle."""
+    cancel_chord_learning_announce_timer(state)
+    if len(held) < 2:
+        return
+
+    chord_set = state['chord_learning_chord_set']
+    delay = max(0.0, float(state.get('chord_learning_announce_delay', 0.2)))
+    timer = None
+
+    def _announce(h=held, cs=chord_set):
+        if state.get('chord_learning_announce_timer') is not timer:
+            return
+        state['chord_learning_announce_timer'] = None
+        if not state['chord_learning_active']:
+            return
+        if frozenset(state['chord_learning_held']) != h:
+            return
+        name = chord_learning.identify_chord(h, cs)
+        if name:
+            print(f"Chord Learning Mode: {name}")
+            speak(name)
+
+    timer = threading.Timer(delay, _announce)
+    timer.daemon = True
+    timer.start()
+    state['chord_learning_announce_timer'] = timer
 
 
 def handle_event(event, fs, ch_keys, ch_pads, sfid, state):
@@ -456,6 +511,7 @@ def handle_event(event, fs, ch_keys, ch_pads, sfid, state):
             state['note_challenge_history'] = []
             print("Note Challenge Mode: exited (drum kit changed)")
         if state['chord_learning_active']:
+            cancel_chord_learning_announce_timer(state)
             state['chord_learning_active'] = False
             state['chord_learning_held'] = set()
             print("Chord Learning Mode: exited (drum kit changed)")
@@ -473,6 +529,7 @@ def handle_event(event, fs, ch_keys, ch_pads, sfid, state):
             state['note_challenge_history'] = []
             print("Note Challenge Mode: exited (tone changed)")
         if state['chord_learning_active']:
+            cancel_chord_learning_announce_timer(state)
             state['chord_learning_active'] = False
             state['chord_learning_held'] = set()
             print("Chord Learning Mode: exited (tone changed)")
@@ -528,20 +585,21 @@ def handle_event(event, fs, ch_keys, ch_pads, sfid, state):
             note_challenge.play_notes_async(t, ch_keys, fs)
         threading.Thread(target=_bingo_then_play, daemon=True).start()
     elif isinstance(event, EnterChordLearningEvent):
+        cancel_chord_learning_announce_timer(state)
         state['chord_learning_active'] = True
         state['chord_learning_held'] = set()
         print("Chord Learning Mode: active")
         speak("Chord Learning Mode")
     elif isinstance(event, ExitChordLearningEvent):
+        cancel_chord_learning_announce_timer(state)
         state['chord_learning_active'] = False
         state['chord_learning_held'] = set()
         print("Chord Learning Mode: exited")
         speak("Goodbye")
     elif isinstance(event, ChordLearningNoteChangedEvent):
-        name = chord_learning.identify_chord(event.held, state['chord_learning_chord_set'])
-        if name:
-            print(f"Chord Learning Mode: {name}")
-            speak(name)
+        cancel_chord_learning_announce_timer(state)
+        if not event.is_release:
+            schedule_chord_learning_announcement(state, event.held)
 
 
 # ---------------------------------------------------------------------------
@@ -608,6 +666,10 @@ def main():
     state['note_challenge_entry'] = parse_entry_pads(challenge_cfg.get('entry_pads', '16,1'))
     state['chord_learning_entry'] = parse_entry_pads(cl_cfg.get('entry_pads', '16,2'))
     state['chord_learning_chord_set'] = cl_cfg.get('chord_set', 'core_set')
+    state['chord_learning_announce_delay'] = max(
+        0.0,
+        float(cl_cfg.get('announce_delay', state['chord_learning_announce_delay'])),
+    )
     _bingo_sound = challenge_cfg.get('bingo_sound')
     if _bingo_sound:
         _bingo_path = pathlib.Path(_bingo_sound)

@@ -89,6 +89,7 @@ def identify_chord(held_notes: frozenset, chord_set: str, _bass_override: int | 
     bass_note = _bass_override if _bass_override is not None else min(held_notes)
     bass_pc = bass_note % 12
 
+    matches = []
     for i in range(n):
         rotated = pcs[i:] + [p + 12 for p in pcs[:i]]
         t = _interval_tuple(rotated)
@@ -101,10 +102,14 @@ def identify_chord(held_notes: frozenset, chord_set: str, _bass_override: int | 
                 inv_idx = chord_pcs.index(bass_pc)
             else:
                 inv_idx = 0
-            root_name = _NOTE_NAMES_TTS[root_pc]
-            if inv_idx == 0:
-                return f'{root_name} {chord_name}'
-            inv_label = _INVERSION_NAMES[inv_idx] if inv_idx < len(_INVERSION_NAMES) else f'inversion {inv_idx}'
-            return f'{root_name} {chord_name}, {inv_label}'
+            matches.append((inv_idx, i, root_pc, chord_name))
+
+    if matches:
+        inv_idx, _, root_pc, chord_name = min(matches, key=lambda item: (item[0], item[1]))
+        root_name = _NOTE_NAMES_TTS[root_pc]
+        if inv_idx == 0:
+            return f'{root_name} {chord_name}'
+        inv_label = _INVERSION_NAMES[inv_idx] if inv_idx < len(_INVERSION_NAMES) else f'inversion {inv_idx}'
+        return f'{root_name} {chord_name}, {inv_label}'
 
     return None

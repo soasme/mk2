@@ -33,5 +33,6 @@ bingo_sound = "assets/freesound_community-078834_child39s-xylophone-2-88465.mp3"
 # Chord Learning Mode settings
 # -----------------------------------------------------------------------------
 [chord_learning]
-entry_pads = "16,2"      # KeySelect pad sequence to enter/exit the mode
-chord_set  = "core_set"  # "minimal", "core_set", or "extended"
+entry_pads     = "16,2"      # KeySelect pad sequence to enter/exit the mode
+chord_set      = "extended"  # "minimal", "core_set", or "extended"
+announce_delay = 0.2         # seconds to wait after the last note change before speaking

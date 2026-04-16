@@ -1,7 +1,12 @@
 import contextlib
 import io
+import sys
+import types
 import unittest
 from types import SimpleNamespace
+
+sys.modules.setdefault('mido', types.SimpleNamespace())
+sys.modules.setdefault('fluidsynth', types.SimpleNamespace())
 
 import main
 from modes import chord_learning
@@ -18,7 +23,7 @@ class ParseEventsTests(unittest.TestCase):
 
     def test_key_select_press_prints_latched_target_channel(self):
         state = main.make_input_state(ch_keys=0, ch_pads=9)
-        state['current_keys_channel'] = 1
+        state['last_keys_channel'] = 1
 
         stdout = io.StringIO()
         with contextlib.redirect_stdout(stdout):
@@ -75,6 +80,18 @@ class ParseEventsTests(unittest.TestCase):
         self.assertEqual(events[0].keys_program, 0)
 
 
+class TtsTests(unittest.TestCase):
+    def test_normalize_say_text_marks_standalone_a(self):
+        self.assertEqual(main.normalize_say_text('A Major'), 'A. Major')
+        self.assertEqual(main.normalize_say_text('A minor seventh, first inversion'), 'A. minor seventh, first inversion')
+
+    def test_normalize_say_text_leaves_normal_words_alone(self):
+        self.assertEqual(main.normalize_say_text('Acoustic Grand Piano'), 'Acoustic Grand Piano')
+        self.assertEqual(main.normalize_say_text('Bingo'), 'Bingo')
+        self.assertEqual(main.normalize_say_text('B flat minor seventh'), 'B flat minor seventh')
+        self.assertEqual(main.normalize_say_text('C 4, E 4, G 4'), 'C 4, E 4, G 4')
+
+
 class ChordLearningTests(unittest.TestCase):
     # --- 2-note intervals ---
     def test_perfect_fifth(self):
@@ -122,6 +139,10 @@ class ChordLearningTests(unittest.TestCase):
         # C4=60, F4=65, G4=67
         self.assertEqual(chord_learning.identify_chord(frozenset({60, 65, 67}), 'core_set'), 'C suspended fourth')
 
+    def test_prefers_root_position_sus4_over_inverted_sus2(self):
+        # A3=57, D4=62, E4=64 can be heard as Dsus2/A or Asus4; prefer root-position Asus4.
+        self.assertEqual(chord_learning.identify_chord(frozenset({57, 62, 64}), 'core_set'), 'A suspended fourth')
+
     # --- 7th chords ---
     def test_dominant_seventh(self):
         # C4=60, E4=64, G4=67, Bb4=70
@@ -141,6 +162,10 @@ class ChordLearningTests(unittest.TestCase):
             chord_learning.identify_chord(frozenset({60, 63, 67, 70}), 'core_set', _bass_override=67),
             'C minor seventh, second inversion'
         )
+
+    def test_prefers_root_position_major_sixth_over_inverted_minor_seventh(self):
+        # C4=60, E4=64, G4=67, A4=69 can be heard as C6 or Am7/C; prefer root-position C6.
+        self.assertEqual(chord_learning.identify_chord(frozenset({60, 64, 67, 69}), 'extended'), 'C major sixth')
 
     def test_diminished_seventh(self):
         # C4=60, Eb4=63, Gb4=66, Bbb4=69 (A=69)
@@ -186,6 +211,8 @@ class ChordLearningParseEventsTests(unittest.TestCase):
         self.assertFalse(state['chord_learning_active'])
         self.assertEqual(state['chord_learning_held'], set())
         self.assertEqual(state['chord_learning_chord_set'], 'core_set')
+        self.assertEqual(state['chord_learning_announce_delay'], 0.2)
+        self.assertIsNone(state['chord_learning_announce_timer'])
         # entry = parse_entry_pads('16,2') = ([], True, [2])
         self.assertEqual(state['chord_learning_entry'], ([], True, [2]))
 
@@ -231,6 +258,7 @@ class ChordLearningParseEventsTests(unittest.TestCase):
         changed_events = [e for e in events if isinstance(e, main.ChordLearningNoteChangedEvent)]
         self.assertEqual(len(changed_events), 1)
         self.assertEqual(changed_events[0].held, frozenset({60}))
+        self.assertFalse(changed_events[0].is_release)
 
         # State updated
         self.assertIn(60, state['chord_learning_held'])
@@ -247,6 +275,7 @@ class ChordLearningParseEventsTests(unittest.TestCase):
         changed_events = [e for e in events if isinstance(e, main.ChordLearningNoteChangedEvent)]
         self.assertEqual(len(changed_events), 1)
         self.assertEqual(changed_events[0].held, frozenset({64}))
+        self.assertTrue(changed_events[0].is_release)
         self.assertNotIn(60, state['chord_learning_held'])
 
     def test_chord_learning_does_not_intercept_pad_notes(self):
@@ -260,6 +289,172 @@ class ChordLearningParseEventsTests(unittest.TestCase):
         changed_events = [e for e in events if isinstance(e, main.ChordLearningNoteChangedEvent)]
         self.assertEqual(len(changed_events), 0)
         self.assertEqual(state['chord_learning_held'], set())
+
+
+class ChordLearningHandleEventTests(unittest.TestCase):
+    def test_note_changed_uses_configured_delay_and_ignores_stale_timer(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['chord_learning_active'] = True
+        state['chord_learning_announce_delay'] = 0.75
+        state['chord_learning_held'] = {60, 64}
+
+        timers = []
+        spoken = []
+
+        class FakeTimer:
+            def __init__(self, delay, func):
+                self.delay = delay
+                self.func = func
+                self.daemon = False
+                self.started = False
+                self.canceled = False
+                timers.append(self)
+
+            def start(self):
+                self.started = True
+
+            def cancel(self):
+                self.canceled = True
+
+        original_timer = main.threading.Timer
+        original_speak = main.speak
+        original_identify = main.chord_learning.identify_chord
+        try:
+            main.threading.Timer = FakeTimer
+            main.speak = lambda text, wait=False: spoken.append((text, wait))
+            main.chord_learning.identify_chord = lambda held, chord_set: {
+                frozenset({60, 64}): 'C major third',
+                frozenset({60, 64, 67}): 'C Major',
+            }.get(held)
+
+            main.handle_event(
+                main.ChordLearningNoteChangedEvent(held=frozenset({60, 64}), is_release=False),
+                fs=None,
+                ch_keys=0,
+                ch_pads=9,
+                sfid=0,
+                state=state,
+            )
+            first_timer = timers[-1]
+            self.assertEqual(first_timer.delay, 0.75)
+            self.assertTrue(first_timer.started)
+            self.assertIs(state['chord_learning_announce_timer'], first_timer)
+
+            state['chord_learning_held'] = {60, 64, 67}
+            main.handle_event(
+                main.ChordLearningNoteChangedEvent(held=frozenset({60, 64, 67}), is_release=False),
+                fs=None,
+                ch_keys=0,
+                ch_pads=9,
+                sfid=0,
+                state=state,
+            )
+            second_timer = timers[-1]
+            self.assertTrue(first_timer.canceled)
+            self.assertIs(state['chord_learning_announce_timer'], second_timer)
+
+            first_timer.func()
+            self.assertEqual(spoken, [])
+
+            with contextlib.redirect_stdout(io.StringIO()) as stdout:
+                second_timer.func()
+            self.assertEqual(spoken, [('C Major', False)])
+            self.assertIn("Chord Learning Mode: C Major", stdout.getvalue())
+            self.assertIsNone(state['chord_learning_announce_timer'])
+        finally:
+            main.threading.Timer = original_timer
+            main.speak = original_speak
+            main.chord_learning.identify_chord = original_identify
+
+    def test_note_release_cancels_pending_announcement_without_scheduling_new_one(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['chord_learning_active'] = True
+        state['chord_learning_held'] = {57, 59, 64}
+
+        timers = []
+
+        class FakeTimer:
+            def __init__(self, delay, func):
+                self.delay = delay
+                self.func = func
+                self.daemon = False
+                self.started = False
+                self.canceled = False
+                timers.append(self)
+
+            def start(self):
+                self.started = True
+
+            def cancel(self):
+                self.canceled = True
+
+        original_timer = main.threading.Timer
+        try:
+            main.threading.Timer = FakeTimer
+
+            main.handle_event(
+                main.ChordLearningNoteChangedEvent(held=frozenset({57, 59, 64}), is_release=False),
+                fs=None,
+                ch_keys=0,
+                ch_pads=9,
+                sfid=0,
+                state=state,
+            )
+            first_timer = timers[-1]
+            self.assertIs(state['chord_learning_announce_timer'], first_timer)
+
+            state['chord_learning_held'] = {57, 64}
+            main.handle_event(
+                main.ChordLearningNoteChangedEvent(held=frozenset({57, 64}), is_release=True),
+                fs=None,
+                ch_keys=0,
+                ch_pads=9,
+                sfid=0,
+                state=state,
+            )
+
+            self.assertTrue(first_timer.canceled)
+            self.assertIsNone(state['chord_learning_announce_timer'])
+            self.assertEqual(len(timers), 1)
+        finally:
+            main.threading.Timer = original_timer
+
+    def test_program_change_cancels_pending_chord_learning_announcement(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['chord_learning_active'] = True
+        state['chord_learning_held'] = {60, 64, 67}
+
+        class FakeTimer:
+            def __init__(self):
+                self.canceled = False
+
+            def cancel(self):
+                self.canceled = True
+
+        class FakeSynth:
+            def program_select(self, channel, sfid, bank, program):
+                return 0
+
+            def cc(self, channel, control, value):
+                pass
+
+        timer = FakeTimer()
+        state['chord_learning_announce_timer'] = timer
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            main.handle_event(
+                main.ProgramChangeEvent(channel=0, keys_bank=0, keys_program=0),
+                fs=FakeSynth(),
+                ch_keys=0,
+                ch_pads=9,
+                sfid=1,
+                state=state,
+            )
+
+        self.assertTrue(timer.canceled)
+        self.assertFalse(state['chord_learning_active'])
+        self.assertEqual(state['chord_learning_held'], set())
+        self.assertIsNone(state['chord_learning_announce_timer'])
 
 
 if __name__ == '__main__':

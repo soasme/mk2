@@ -52,9 +52,11 @@ LaunchKey Mini MK2 (USB)
 
 ## Concurrency Model
 
-FluidSynth manages its own internal audio thread. `main.py` is single-threaded: it reads MIDI messages from mido in a blocking loop and makes synchronous calls into the FluidSynth C library. No Python threading primitives are needed in the main loop.
+FluidSynth manages its own internal audio thread. `main.py` is single-threaded: it reads MIDI messages from mido in a blocking loop and makes synchronous calls into the FluidSynth C library.
 
-Exception: `note_challenge.play_notes_async` spawns a short-lived daemon thread to play a note sequence without blocking the MIDI loop.
+Exceptions:
+- `note_challenge.play_notes_async` spawns a short-lived daemon thread to play a note sequence without blocking the MIDI loop
+- Chord Learning mode uses a short-lived `threading.Timer` to debounce chord announcements after held-note changes
 
 ## Input State Machine
 
@@ -74,6 +76,8 @@ Exception: `note_challenge.play_notes_async` spawns a short-lived daemon thread 
 | `chord_learning_active` | True when Chord Learning Mode is running |
 | `chord_learning_held` | Set of currently held MIDI note numbers |
 | `chord_learning_chord_set` | Active chord recognition set name |
+| `chord_learning_announce_delay` | Debounce delay before speaking a detected chord |
+| `chord_learning_announce_timer` | Pending timer for the next debounced chord announcement |
 
 ## Scene Button Controls
 
@@ -114,11 +118,11 @@ Entry/exit: hold KeySelect and press the pad sequence configured in `chord_learn
 
 While active:
 - Key notes still play normally through FluidSynth
-- Every change to the set of held keys triggers chord detection
+- Every change to the set of held keys resets a short debounce timer
 - If the held notes form a recognized chord, its name is spoken via TTS
 - Unrecognized combinations produce no output
 
-Configuration in `config.toml` under `[chord_learning]`: `entry_pads`, `chord_set` (`"minimal"`, `"core_set"`, `"extended"`).
+Configuration in `config.toml` under `[chord_learning]`: `entry_pads`, `chord_set` (`"minimal"`, `"core_set"`, `"extended"`), `announce_delay` (seconds).
 
 Logic is in `modes/chord_learning.py` (pure functions, no I/O). Orchestration is in `handle_event` in `main.py`.
 
