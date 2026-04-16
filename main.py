@@ -296,6 +296,11 @@ def parse_events(msg, state):
                           f"— last {len(recent)}: {note_challenge.note_names_display(recent)} "
                           f"(target: {note_challenge.note_names_display(target)}, {hits}/{n} trailing match)")
 
+            # Chord Learning Mode: track held notes
+            if state['chord_learning_active'] and msg.channel == state['ch_keys']:
+                state['chord_learning_held'].add(msg.note)
+                events.append(ChordLearningNoteChangedEvent(held=frozenset(state['chord_learning_held'])))
+
     elif msg.type == 'note_off':
         if msg.note in state['channel_select_captured']:
             state['channel_select_captured'].discard(msg.note)
@@ -308,6 +313,10 @@ def parse_events(msg, state):
         else:
             ch = state['current_keys_channel'] if msg.channel == state['ch_keys'] else msg.channel
             events.append(NoteOffEvent(ch, msg.note))
+            # Chord Learning Mode: update held notes
+            if state['chord_learning_active'] and msg.channel == state['ch_keys']:
+                state['chord_learning_held'].discard(msg.note)
+                events.append(ChordLearningNoteChangedEvent(held=frozenset(state['chord_learning_held'])))
 
     elif msg.type == 'control_change':
         if CC_CHANNEL_SELECT is not None and msg.control == CC_CHANNEL_SELECT:
@@ -352,6 +361,7 @@ def parse_events(msg, state):
                 key_select_channel = state['key_select_channel']
                 # Configured pad sequence: toggle Note Challenge Mode
                 e_digits, e_bank_sep, e_bank_digits = state['note_challenge_entry']
+                cl_digits, cl_bank_sep, cl_bank_digits = state['chord_learning_entry']
                 if (digits == e_digits
                         and state['key_select_bank_sep'] == e_bank_sep
                         and bank_digits == e_bank_digits):
@@ -359,6 +369,13 @@ def parse_events(msg, state):
                         events.append(ExitNoteChallengeEvent())
                     else:
                         events.append(EnterNoteChallengeEvent())
+                elif (digits == cl_digits
+                        and state['key_select_bank_sep'] == cl_bank_sep
+                        and bank_digits == cl_bank_digits):
+                    if state['chord_learning_active']:
+                        events.append(ExitChordLearningEvent())
+                    else:
+                        events.append(EnterChordLearningEvent())
                 elif digits:
                     if key_select_channel == state['ch_pads']:
                         print(
