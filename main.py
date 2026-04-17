@@ -393,6 +393,8 @@ def parse_events(msg, state):
                 print("PadSelect Button is released")
                 if state['pad_select_program'] is not None:
                     events.append(PercussionChangeEvent(pads_program=state['pad_select_program']))
+                elif state['loop_mode_active']:
+                    events.append(LoopModeRecordToggleEvent())
 
         elif msg.control == CC_KEY_SELECT:
             if msg.value == 127:
