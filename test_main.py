@@ -546,6 +546,8 @@ class LoopModeParseEventsTests(unittest.TestCase):
     def test_cc_track_constants(self):
         self.assertEqual(main.CC_TRACK_LEFT, 103)
         self.assertEqual(main.CC_TRACK_RIGHT, 102)
+        self.assertEqual(main.CC_TRACK_LEFT_ALT, 107)
+        self.assertEqual(main.CC_TRACK_RIGHT_ALT, 106)
 
     def test_enter_loop_mode(self):
         state = main.make_input_state(ch_keys=0, ch_pads=9)
@@ -594,6 +596,24 @@ class LoopModeParseEventsTests(unittest.TestCase):
         state['loop_mode_active'] = True
         events = main.parse_events(
             msg('control_change', control=main.CC_TRACK_LEFT, value=127), state
+        )
+        self.assertEqual(len(events), 1)
+        self.assertIsInstance(events[0], main.LoopModeTrackLeftEvent)
+
+    def test_alt_track_right_in_loop_mode(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        events = main.parse_events(
+            msg('control_change', control=main.CC_TRACK_RIGHT_ALT, value=127), state
+        )
+        self.assertEqual(len(events), 1)
+        self.assertIsInstance(events[0], main.LoopModeTrackRightEvent)
+
+    def test_alt_track_left_in_loop_mode(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        events = main.parse_events(
+            msg('control_change', control=main.CC_TRACK_LEFT_ALT, value=127), state
         )
         self.assertEqual(len(events), 1)
         self.assertIsInstance(events[0], main.LoopModeTrackLeftEvent)
