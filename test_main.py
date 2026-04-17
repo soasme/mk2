@@ -824,6 +824,85 @@ class LoopModeHandleEventTests(unittest.TestCase):
         self._call_handle(main.LoopModeTrackLeftEvent(), state)
         self.assertEqual(state['loop_mode_current_track'], 3)
 
+    def test_record_toggle_starts_recording(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        state['loop_mode_recording'] = False
+        self._call_handle(main.LoopModeRecordToggleEvent(), state)
+        self.assertTrue(state['loop_mode_recording'])
+        self.assertEqual(state['loop_mode_record_buffer'], [])
+        self.assertGreater(state['loop_mode_record_start'], 0.0)
+
+    def test_record_toggle_stops_recording_and_saves_track_with_events(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        state['loop_mode_recording'] = True
+        state['loop_mode_record_start'] = time.time() - 1.0  # 1 second ago
+        state['loop_mode_record_buffer'] = [
+            (0.0,  'note_on',  0, 60, 100),
+            (0.5,  'note_off', 0, 60, 0),
+        ]
+        self._call_handle(main.LoopModeRecordToggleEvent(), state)
+        self.assertFalse(state['loop_mode_recording'])
+        track = state['loop_mode_tracks'][0]
+        self.assertIsNotNone(track)
+        self.assertEqual(len(track.events), 2)
+        self.assertGreater(track.duration, 0.9)
+
+    def test_record_toggle_stops_recording_clears_track_on_empty_buffer(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        state['loop_mode_recording'] = True
+        state['loop_mode_record_start'] = time.time()
+        state['loop_mode_record_buffer'] = []
+        state['loop_mode_tracks'][0] = object()  # existing content
+        self._call_handle(main.LoopModeRecordToggleEvent(), state)
+        self.assertFalse(state['loop_mode_recording'])
+        self.assertIsNone(state['loop_mode_tracks'][0])
+
+    def test_record_toggle_stops_current_track_playback(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        state['loop_mode_recording'] = False
+        state['loop_mode_playing'] = True
+        stop_ev = threading.Event()
+        state['loop_mode_play_stop_events'][0] = stop_ev
+        self._call_handle(main.LoopModeRecordToggleEvent(), state)
+        self.assertTrue(stop_ev.is_set())
+        self.assertIsNone(state['loop_mode_play_stop_events'][0])
+
+    def test_record_toggle_restarts_track_playback_if_playing_and_track_has_content(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        state['loop_mode_recording'] = True
+        state['loop_mode_record_start'] = time.time() - 1.0
+        state['loop_mode_record_buffer'] = [
+            (0.0, 'note_on', 0, 60, 100),
+            (0.5, 'note_off', 0, 60, 0),
+        ]
+        state['loop_mode_playing'] = True  # global playback is ON
+
+        threads_started = []
+        original_thread = main.threading.Thread
+
+        class FakeThread:
+            def __init__(self, target=None, args=(), daemon=False):
+                self.target = target
+                self.daemon = daemon
+                threads_started.append(self)
+
+            def start(self):
+                pass
+
+        main.threading.Thread = FakeThread
+        try:
+            self._call_handle(main.LoopModeRecordToggleEvent(), state)
+        finally:
+            main.threading.Thread = original_thread
+
+        self.assertTrue(len(threads_started) > 0)
+        self.assertIsNotNone(state['loop_mode_play_stop_events'][0])
+
 
 if __name__ == '__main__':
     unittest.main()

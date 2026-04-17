@@ -699,6 +699,40 @@ def handle_event(event, fs, ch_keys, ch_pads, sfid, state):
         n = state['loop_mode_n_tracks']
         state['loop_mode_current_track'] = (state['loop_mode_current_track'] - 1) % n
         print(f"Loop Mode: track {state['loop_mode_current_track'] + 1}/{n}")
+    elif isinstance(event, LoopModeRecordToggleEvent):
+        idx = state['loop_mode_current_track']
+        if not state['loop_mode_recording']:
+            # Start recording: stop current track's playback thread
+            stop_ev = state['loop_mode_play_stop_events'][idx]
+            if stop_ev is not None:
+                stop_ev.set()
+                state['loop_mode_play_stop_events'][idx] = None
+            state['loop_mode_recording'] = True
+            state['loop_mode_record_start'] = time.time()
+            state['loop_mode_record_buffer'] = []
+            print(f"Loop Mode: recording track {idx + 1}")
+        else:
+            # Stop recording
+            state['loop_mode_recording'] = False
+            duration = time.time() - state['loop_mode_record_start']
+            buf = state['loop_mode_record_buffer']
+            state['loop_mode_record_buffer'] = []
+            if buf:
+                state['loop_mode_tracks'][idx] = loop_mode.LoopTrack(events=buf, duration=duration)
+                print(f"Loop Mode: track {idx + 1} saved ({duration:.2f}s, {len(buf)} events)")
+            else:
+                state['loop_mode_tracks'][idx] = None
+                print(f"Loop Mode: track {idx + 1} cleared")
+            # If global playback is on and track has content, restart playback for this track
+            if state['loop_mode_playing'] and state['loop_mode_tracks'][idx] is not None:
+                stop_ev = threading.Event()
+                state['loop_mode_play_stop_events'][idx] = stop_ev
+                t = threading.Thread(
+                    target=loop_mode.play_track_loop,
+                    args=(state['loop_mode_tracks'][idx], fs, stop_ev),
+                    daemon=True,
+                )
+                t.start()
     elif isinstance(event, ChordLearningNoteChangedEvent):
         cancel_chord_learning_announce_timer(state)
         if not event.is_release:
