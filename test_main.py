@@ -1,6 +1,8 @@
 import contextlib
 import io
 import sys
+import threading
+import time
 import types
 import unittest
 from types import SimpleNamespace
@@ -455,6 +457,72 @@ class ChordLearningHandleEventTests(unittest.TestCase):
         self.assertFalse(state['chord_learning_active'])
         self.assertEqual(state['chord_learning_held'], set())
         self.assertIsNone(state['chord_learning_announce_timer'])
+
+
+import modes.loop_mode as loop_mode_module
+
+
+class LoopModeTests(unittest.TestCase):
+    def test_loop_track_default_is_empty(self):
+        track = loop_mode_module.LoopTrack(events=[], duration=0.0)
+        self.assertEqual(track.events, [])
+        self.assertEqual(track.duration, 0.0)
+
+    def test_play_track_loop_plays_events_in_order(self):
+        played = []
+        stop_event = threading.Event()
+
+        class FakeSynth:
+            def noteon(self, channel, note, velocity):
+                played.append(('noteon', channel, note, velocity))
+
+            def noteoff(self, channel, note, velocity=0):
+                played.append(('noteoff', channel, note, velocity))
+
+        track = loop_mode_module.LoopTrack(
+            events=[
+                (0.0,  'note_on',  0, 60, 100),
+                (0.05, 'note_off', 0, 60, 0),
+            ],
+            duration=0.1,
+        )
+
+        t = threading.Thread(
+            target=loop_mode_module.play_track_loop,
+            args=(track, FakeSynth(), stop_event),
+            daemon=True,
+        )
+        t.start()
+        time.sleep(0.25)  # let it loop twice
+        stop_event.set()
+        t.join(timeout=1.0)
+
+        # At least two iterations: noteon, noteoff, noteon, noteoff
+        self.assertGreaterEqual(played.count(('noteon', 0, 60, 100)), 2)
+        self.assertGreaterEqual(played.count(('noteoff', 0, 60, 0)), 2)
+
+    def test_play_track_loop_stops_promptly_on_stop_event(self):
+        stop_event = threading.Event()
+
+        class FakeSynth:
+            def noteon(self, *a): pass
+            def noteoff(self, *a): pass
+
+        track = loop_mode_module.LoopTrack(
+            events=[(0.0, 'note_on', 0, 60, 100)],
+            duration=60.0,  # very long loop
+        )
+
+        t = threading.Thread(
+            target=loop_mode_module.play_track_loop,
+            args=(track, FakeSynth(), stop_event),
+            daemon=True,
+        )
+        t.start()
+        time.sleep(0.05)
+        stop_event.set()
+        t.join(timeout=0.5)
+        self.assertFalse(t.is_alive())
 
 
 if __name__ == '__main__':
