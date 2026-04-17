@@ -747,12 +747,19 @@ def handle_event(event, fs, ch_keys, ch_pads, sfid, state):
                     duration=trimmed_duration,
                 )
                 fit_info = None
+                quantize_info = None
                 reference_duration = state['loop_mode_reference_duration']
                 if reference_duration is None:
+                    track, quantize_info = loop_mode.quantize_first_track(track)
                     state['loop_mode_reference_duration'] = track.duration
                 else:
                     track, fit_info = loop_mode.fit_track_to_reference(track, reference_duration)
                 state['loop_mode_tracks'][idx] = track
+                if quantize_info is not None:
+                    print(
+                        "Loop Mode: "
+                        f"track {idx + 1} timing aligned to 1/{quantize_info['subdivision']} of loop length"
+                    )
                 if fit_info is not None and abs(fit_info['source_duration'] - fit_info['target_duration']) > 1e-6:
                     print(
                         "Loop Mode: "

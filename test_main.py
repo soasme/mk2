@@ -469,6 +469,68 @@ class LoopModeTests(unittest.TestCase):
         self.assertEqual(track.events, [])
         self.assertEqual(track.duration, 0.0)
 
+    def test_quantize_first_track_snaps_to_quarter_grid(self):
+        track = loop_mode_module.LoopTrack(
+            events=[
+                (0.03, 'note_on', 0, 60, 100),
+                (0.24, 'note_off', 0, 60, 0),
+                (1.07, 'note_on', 0, 62, 100),
+                (1.26, 'note_off', 0, 62, 0),
+                (2.02, 'note_on', 0, 64, 100),
+                (2.29, 'note_off', 0, 64, 0),
+                (2.94, 'note_on', 0, 65, 100),
+                (3.21, 'note_off', 0, 65, 0),
+            ],
+            duration=4.0,
+        )
+
+        quantized, info = loop_mode_module.quantize_first_track(track)
+
+        self.assertEqual(info['subdivision'], 4)
+        self.assertEqual(
+            [offset for offset, event_type, *_ in quantized.events if event_type == 'note_on'],
+            [0.0, 1.0, 2.0, 3.0],
+        )
+
+    def test_quantize_first_track_snaps_to_triplet_grid(self):
+        track = loop_mode_module.LoopTrack(
+            events=[
+                (0.02, 'note_on', 0, 60, 100),
+                (0.31, 'note_off', 0, 60, 0),
+                (0.96, 'note_on', 0, 62, 100),
+                (1.31, 'note_off', 0, 62, 0),
+                (2.04, 'note_on', 0, 64, 100),
+                (2.32, 'note_off', 0, 64, 0),
+            ],
+            duration=3.0,
+        )
+
+        quantized, info = loop_mode_module.quantize_first_track(track)
+
+        self.assertEqual(info['subdivision'], 3)
+        self.assertEqual(
+            [offset for offset, event_type, *_ in quantized.events if event_type == 'note_on'],
+            [0.0, 1.0, 2.0],
+        )
+
+    def test_quantize_first_track_leaves_unstructured_timing_unchanged(self):
+        track = loop_mode_module.LoopTrack(
+            events=[
+                (0.0, 'note_on', 0, 60, 100),
+                (0.49, 'note_off', 0, 60, 0),
+                (1.15, 'note_on', 0, 62, 100),
+                (1.91, 'note_off', 0, 62, 0),
+                (2.63, 'note_on', 0, 64, 100),
+                (3.41, 'note_off', 0, 64, 0),
+            ],
+            duration=4.0,
+        )
+
+        quantized, info = loop_mode_module.quantize_first_track(track)
+
+        self.assertIs(quantized, track)
+        self.assertIsNone(info)
+
     def test_fit_track_to_reference_snaps_to_nearest_multiple(self):
         track = loop_mode_module.LoopTrack(
             events=[
@@ -999,6 +1061,31 @@ class LoopModeHandleEventTests(unittest.TestCase):
             state['loop_mode_reference_duration'],
             state['loop_mode_tracks'][0].duration,
             places=2,
+        )
+
+    def test_first_saved_track_quantizes_rough_beats(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        state['loop_mode_recording'] = True
+        state['loop_mode_record_start'] = time.time() - 4.0
+        state['loop_mode_record_buffer'] = [
+            (0.03, 'note_on', 0, 60, 100),
+            (0.24, 'note_off', 0, 60, 0),
+            (1.07, 'note_on', 0, 62, 100),
+            (1.26, 'note_off', 0, 62, 0),
+            (2.02, 'note_on', 0, 64, 100),
+            (2.29, 'note_off', 0, 64, 0),
+            (2.94, 'note_on', 0, 65, 100),
+            (3.21, 'note_off', 0, 65, 0),
+        ]
+
+        self._call_handle(main.LoopModeRecordToggleEvent(), state)
+
+        track = state['loop_mode_tracks'][0]
+        step = track.duration / 4
+        self.assertEqual(
+            [round(offset / step) for offset, event_type, *_ in track.events if event_type == 'note_on'],
+            [0, 1, 2, 3],
         )
 
     def test_record_toggle_stops_recording_and_saves_track_with_events(self):

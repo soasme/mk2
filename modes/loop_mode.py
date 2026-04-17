@@ -8,6 +8,8 @@ import time
 from dataclasses import dataclass
 
 AUTO_FIT_TOLERANCE = 0.10
+FIRST_TRACK_QUANTIZE_SUBDIVISIONS = (2, 3, 4, 6, 8, 12, 16)
+FIRST_TRACK_QUANTIZE_TOLERANCE = 0.12
 
 
 @dataclass
@@ -46,6 +48,71 @@ def fit_track_to_reference(track, reference_duration, tolerance=AUTO_FIT_TOLERAN
         'source_duration': track.duration,
         'target_duration': target_duration,
         'error_ratio': error_ratio,
+    }
+
+
+def quantize_first_track(track,
+                         subdivisions=FIRST_TRACK_QUANTIZE_SUBDIVISIONS,
+                         tolerance=FIRST_TRACK_QUANTIZE_TOLERANCE):
+    """Quantize a first-pass loop to a coarse beat grid derived from its length.
+
+    The smallest subdivision count that explains all note-on offsets within the
+    tolerance window wins. This biases toward musically simple grids such as
+    halves, thirds, quarters, and eighths instead of overfitting finer grids.
+    """
+    if track.duration <= 0 or not track.events:
+        return track, None
+
+    note_on_offsets = sorted(
+        {time_offset for time_offset, event_type, *_ in track.events if event_type == 'note_on'}
+    )
+    if len(note_on_offsets) < 2:
+        return track, None
+
+    chosen = None
+    chosen_max_error = None
+    for subdivision in subdivisions:
+        step = track.duration / subdivision
+        if step <= 0:
+            continue
+        errors = []
+        for offset in note_on_offsets:
+            snapped = round(offset / step) * step
+            snapped = min(track.duration, max(0.0, snapped))
+            errors.append(abs(offset - snapped))
+        max_error = max(errors)
+        if max_error <= tolerance * step:
+            chosen = subdivision
+            chosen_max_error = max_error
+            break
+
+    if chosen is None:
+        return track, None
+
+    step = track.duration / chosen
+    quantized_events = []
+    for index, (time_offset, event_type, channel, note, velocity) in enumerate(track.events):
+        snapped = round(time_offset / step) * step
+        snapped = min(track.duration, max(0.0, snapped))
+        quantized_events.append((snapped, event_type, channel, note, velocity, index))
+
+    # Stable ordering matters when multiple events collapse onto the same beat.
+    quantized_events.sort(
+        key=lambda event: (
+            event[0],
+            0 if event[1] == 'note_off' else 1,
+            event[5],
+        )
+    )
+    quantized_track = LoopTrack(
+        events=[(offset, event_type, channel, note, velocity)
+                for offset, event_type, channel, note, velocity, _ in quantized_events],
+        duration=track.duration,
+    )
+    return quantized_track, {
+        'subdivision': chosen,
+        'max_error': chosen_max_error,
+        'step': step,
     }
 
 
