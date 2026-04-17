@@ -634,6 +634,26 @@ class LoopModeParseEventsTests(unittest.TestCase):
         self.assertTrue(any(isinstance(e, main.PercussionChangeEvent) for e in events))
         self.assertFalse(any(isinstance(e, main.LoopModeRecordToggleEvent) for e in events))
 
+    def test_key_select_bare_tap_in_loop_mode_emits_playback_toggle(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        with contextlib.redirect_stdout(io.StringIO()):
+            main.parse_events(msg('control_change', control=main.CC_KEY_SELECT, value=127, channel=0), state)
+            # Release without pressing any pad at all
+            events = main.parse_events(msg('control_change', control=main.CC_KEY_SELECT, value=0, channel=0), state)
+        self.assertEqual(len(events), 1)
+        self.assertIsInstance(events[0], main.LoopModePlaybackToggleEvent)
+
+    def test_key_select_with_digits_in_loop_mode_emits_program_change(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        with contextlib.redirect_stdout(io.StringIO()):
+            main.parse_events(msg('control_change', control=main.CC_KEY_SELECT, value=127, channel=0), state)
+            main.parse_events(msg('note_on', note=40, velocity=127, channel=state['ch_pads']), state)  # digit 1
+            events = main.parse_events(msg('control_change', control=main.CC_KEY_SELECT, value=0, channel=0), state)
+        self.assertTrue(any(isinstance(e, main.ProgramChangeEvent) for e in events))
+        self.assertFalse(any(isinstance(e, main.LoopModePlaybackToggleEvent) for e in events))
+
 
 if __name__ == '__main__':
     unittest.main()

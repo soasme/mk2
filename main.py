@@ -437,6 +437,9 @@ def parse_events(msg, state):
                         events.append(ExitLoopModeEvent())
                     else:
                         events.append(EnterLoopModeEvent())
+                elif (not digits and not state['key_select_bank_sep']
+                        and not bank_digits and state['loop_mode_active']):
+                    events.append(LoopModePlaybackToggleEvent())
                 elif digits:
                     if key_select_channel == state['ch_pads']:
                         print(
