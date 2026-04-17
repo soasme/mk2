@@ -317,10 +317,11 @@ def parse_events(msg, state):
 
             # Reroute hardware key notes to current_keys_channel
             ch = state['current_keys_channel'] if msg.channel == state['ch_keys'] else msg.channel
+            vel = msg.velocity if state.get('enable_key_velocity') else 100
             # Track the actual output channel so KeySelect can target it
             if msg.channel != state['ch_pads']:
                 state['last_keys_channel'] = ch
-            events.append(NoteOnEvent(ch, msg.note, msg.velocity))
+            events.append(NoteOnEvent(ch, msg.note, vel))
 
             # Note Challenge Mode: track key presses and check for a match
             if state['note_challenge_active'] and msg.channel == state['ch_keys']:
@@ -353,7 +354,7 @@ def parse_events(msg, state):
                     and (msg.channel == state['ch_keys'] or msg.channel == state['ch_pads'])):
                 offset = time.time() - state['loop_mode_record_start']
                 state['loop_mode_record_buffer'].append(
-                    (offset, 'note_on', msg.channel, msg.note, msg.velocity)
+                    (offset, 'note_on', ch, msg.note, vel)
                 )
 
     elif msg.type == 'note_off':
@@ -381,7 +382,7 @@ def parse_events(msg, state):
                     and (msg.channel == state['ch_keys'] or msg.channel == state['ch_pads'])):
                 offset = time.time() - state['loop_mode_record_start']
                 state['loop_mode_record_buffer'].append(
-                    (offset, 'note_off', msg.channel, msg.note, 0)
+                    (offset, 'note_off', ch, msg.note, 0)
                 )
 
     elif msg.type == 'control_change':

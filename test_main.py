@@ -724,7 +724,38 @@ class LoopModeParseEventsTests(unittest.TestCase):
         self.assertEqual(len(state['loop_mode_record_buffer']), 1)
         buf_entry = state['loop_mode_record_buffer'][0]
         self.assertEqual(buf_entry[1], 'note_off')
+        self.assertEqual(buf_entry[2], state['ch_keys'])
         self.assertEqual(buf_entry[3], 60)
+
+    def test_note_on_buffered_uses_normalized_velocity(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        state['loop_mode_recording'] = True
+        state['loop_mode_record_start'] = time.time()
+        state['enable_key_velocity'] = False
+
+        events = main.parse_events(
+            msg('note_on', note=60, velocity=27, channel=state['ch_keys']), state
+        )
+
+        note_event = next(e for e in events if isinstance(e, main.NoteOnEvent))
+        self.assertEqual(note_event.velocity, 100)
+        self.assertEqual(state['loop_mode_record_buffer'][0][4], 100)
+
+    def test_note_on_buffered_uses_rerouted_channel(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        state['loop_mode_recording'] = True
+        state['loop_mode_record_start'] = time.time()
+        state['current_keys_channel'] = 2
+
+        events = main.parse_events(
+            msg('note_on', note=60, velocity=100, channel=state['ch_keys']), state
+        )
+
+        note_event = next(e for e in events if isinstance(e, main.NoteOnEvent))
+        self.assertEqual(note_event.channel, 2)
+        self.assertEqual(state['loop_mode_record_buffer'][0][2], 2)
 
     def test_pad_notes_also_buffered_during_recording(self):
         state = main.make_input_state(ch_keys=0, ch_pads=9)
