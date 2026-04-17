@@ -666,6 +666,31 @@ def handle_event(event, fs, ch_keys, ch_pads, sfid, state):
         state['chord_learning_held'] = set()
         print("Chord Learning Mode: exited")
         speak("Goodbye")
+    elif isinstance(event, EnterLoopModeEvent):
+        # Stop any existing playback
+        for i, stop_ev in enumerate(state['loop_mode_play_stop_events']):
+            if stop_ev is not None:
+                stop_ev.set()
+        n = state['loop_mode_n_tracks']
+        state['loop_mode_active'] = True
+        state['loop_mode_tracks'] = [None] * n
+        state['loop_mode_current_track'] = 0
+        state['loop_mode_recording'] = False
+        state['loop_mode_record_buffer'] = []
+        state['loop_mode_playing'] = False
+        state['loop_mode_play_stop_events'] = [None] * n
+        print("Loop Mode: active")
+        speak("Loop Mode")
+    elif isinstance(event, ExitLoopModeEvent):
+        for i, stop_ev in enumerate(state['loop_mode_play_stop_events']):
+            if stop_ev is not None:
+                stop_ev.set()
+        state['loop_mode_active'] = False
+        state['loop_mode_playing'] = False
+        state['loop_mode_recording'] = False
+        state['loop_mode_play_stop_events'] = [None] * state['loop_mode_n_tracks']
+        print("Loop Mode: exited")
+        speak("Goodbye")
     elif isinstance(event, ChordLearningNoteChangedEvent):
         cancel_chord_learning_announce_timer(state)
         if not event.is_release:

@@ -715,5 +715,87 @@ class LoopModeParseEventsTests(unittest.TestCase):
         self.assertEqual(state['loop_mode_record_buffer'], [])
 
 
+class LoopModeHandleEventTests(unittest.TestCase):
+    def _make_fake_synth(self):
+        class FakeSynth:
+            def noteon(self, *a): pass
+            def noteoff(self, *a): pass
+            def program_select(self, *a): return 0
+            def cc(self, *a): pass
+        return FakeSynth()
+
+    def _call_handle(self, event, state):
+        with contextlib.redirect_stdout(io.StringIO()):
+            main.handle_event(
+                event,
+                fs=self._make_fake_synth(),
+                ch_keys=0, ch_pads=9, sfid=1,
+                state=state,
+            )
+
+    def test_enter_loop_mode_sets_active_and_clears_state(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        # Simulate prior loop state that should be cleaned up
+        state['loop_mode_tracks'][0] = object()
+        state['loop_mode_current_track'] = 2
+        state['loop_mode_recording'] = True
+        state['loop_mode_playing'] = True
+
+        spoken = []
+        original_speak = main.speak
+        main.speak = lambda text, wait=False: spoken.append(text)
+        try:
+            self._call_handle(main.EnterLoopModeEvent(), state)
+        finally:
+            main.speak = original_speak
+
+        self.assertTrue(state['loop_mode_active'])
+        self.assertTrue(all(t is None for t in state['loop_mode_tracks']))
+        self.assertEqual(state['loop_mode_current_track'], 0)
+        self.assertFalse(state['loop_mode_recording'])
+        self.assertEqual(state['loop_mode_record_buffer'], [])
+        self.assertFalse(state['loop_mode_playing'])
+        self.assertIn('Loop Mode', spoken[0])
+
+    def test_exit_loop_mode_clears_active_and_stops_playback(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        state['loop_mode_playing'] = True
+        stop_ev = threading.Event()
+        state['loop_mode_play_stop_events'][0] = stop_ev
+
+        spoken = []
+        original_speak = main.speak
+        main.speak = lambda text, wait=False: spoken.append(text)
+        try:
+            self._call_handle(main.ExitLoopModeEvent(), state)
+        finally:
+            main.speak = original_speak
+
+        self.assertFalse(state['loop_mode_active'])
+        self.assertFalse(state['loop_mode_playing'])
+        self.assertTrue(stop_ev.is_set())
+        self.assertIn('Goodbye', spoken[0])
+
+    def test_enter_loop_mode_stops_existing_playback_threads(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        state['loop_mode_playing'] = True
+        stop_ev0 = threading.Event()
+        stop_ev1 = threading.Event()
+        state['loop_mode_play_stop_events'][0] = stop_ev0
+        state['loop_mode_play_stop_events'][1] = stop_ev1
+
+        original_speak = main.speak
+        main.speak = lambda text, wait=False: None
+        try:
+            self._call_handle(main.EnterLoopModeEvent(), state)
+        finally:
+            main.speak = original_speak
+
+        self.assertTrue(stop_ev0.is_set())
+        self.assertTrue(stop_ev1.is_set())
+
+
 if __name__ == '__main__':
     unittest.main()
