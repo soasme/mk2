@@ -12,6 +12,7 @@ sys.modules.setdefault('fluidsynth', types.SimpleNamespace())
 
 import main
 from modes import chord_learning
+import modes.loop_mode as loop_mode_module
 
 
 def msg(msg_type, **kwargs):
@@ -458,8 +459,6 @@ class ChordLearningHandleEventTests(unittest.TestCase):
         self.assertEqual(state['chord_learning_held'], set())
         self.assertIsNone(state['chord_learning_announce_timer'])
 
-
-import modes.loop_mode as loop_mode_module
 
 
 class LoopModeTests(unittest.TestCase):

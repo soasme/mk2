@@ -5,7 +5,7 @@ Each LoopTrack stores a list of timestamped MIDI events and a total duration.
 play_track_loop() runs in a daemon thread and loops the track until stop_event is set.
 """
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass
