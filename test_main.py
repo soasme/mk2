@@ -884,6 +884,23 @@ class LoopModeHandleEventTests(unittest.TestCase):
         self.assertIsNotNone(track)
         self.assertEqual(len(track.events), 2)
         self.assertGreater(track.duration, 0.9)
+        self.assertEqual(track.events[0][0], 0.0)
+
+    def test_record_toggle_trims_leading_silence_from_saved_track(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        state['loop_mode_recording'] = True
+        state['loop_mode_record_start'] = time.time() - 2.0
+        state['loop_mode_record_buffer'] = [
+            (1.0, 'note_on', 0, 60, 100),
+            (1.4, 'note_off', 0, 60, 0),
+        ]
+        self._call_handle(main.LoopModeRecordToggleEvent(), state)
+        track = state['loop_mode_tracks'][0]
+        self.assertEqual(track.events[0][0], 0.0)
+        self.assertAlmostEqual(track.events[1][0], 0.4, places=1)
+        self.assertGreater(track.duration, 0.9)
+        self.assertLess(track.duration, 1.2)
 
     def test_record_toggle_stops_recording_clears_track_on_empty_buffer(self):
         state = main.make_input_state(ch_keys=0, ch_pads=9)

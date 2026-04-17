@@ -728,7 +728,16 @@ def handle_event(event, fs, ch_keys, ch_pads, sfid, state):
             buf = state['loop_mode_record_buffer']
             state['loop_mode_record_buffer'] = []
             if buf:
-                state['loop_mode_tracks'][idx] = loop_mode.LoopTrack(events=buf, duration=duration)
+                lead_in = buf[0][0]
+                trimmed = [
+                    (offset - lead_in, event_type, channel, note, velocity)
+                    for offset, event_type, channel, note, velocity in buf
+                ]
+                trimmed_duration = max(trimmed[-1][0], duration - lead_in)
+                state['loop_mode_tracks'][idx] = loop_mode.LoopTrack(
+                    events=trimmed,
+                    duration=trimmed_duration,
+                )
                 print(f"Loop Mode: track {idx + 1} saved ({duration:.2f}s, {len(buf)} events)")
             else:
                 state['loop_mode_tracks'][idx] = None
