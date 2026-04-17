@@ -476,8 +476,8 @@ class LoopModeTests(unittest.TestCase):
             def noteon(self, channel, note, velocity):
                 played.append(('noteon', channel, note, velocity))
 
-            def noteoff(self, channel, note, velocity=0):
-                played.append(('noteoff', channel, note, velocity))
+            def noteoff(self, channel, note):
+                played.append(('noteoff', channel, note))
 
         track = loop_mode_module.LoopTrack(
             events=[
@@ -499,7 +499,7 @@ class LoopModeTests(unittest.TestCase):
 
         # At least two iterations: noteon, noteoff, noteon, noteoff
         self.assertGreaterEqual(played.count(('noteon', 0, 60, 100)), 2)
-        self.assertGreaterEqual(played.count(('noteoff', 0, 60, 0)), 2)
+        self.assertGreaterEqual(played.count(('noteoff', 0, 60)), 2)
 
     def test_play_track_loop_stops_promptly_on_stop_event(self):
         stop_event = threading.Event()

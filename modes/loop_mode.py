@@ -35,7 +35,7 @@ def play_track_loop(track, fs, stop_event):
             if event_type == 'note_on':
                 fs.noteon(channel, note, velocity)
             elif event_type == 'note_off':
-                fs.noteoff(channel, note, velocity)
+                fs.noteoff(channel, note)
         remaining = loop_start + track.duration - time.monotonic()
         if remaining > 0:
             stop_event.wait(remaining)
