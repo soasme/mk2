@@ -9,7 +9,7 @@ MIDI device and channel routing.
 | `port`         | string | `"Launchkey Mini LK Mini MIDI"`   | Exact MIDI input port name. Run `python3 -c "import mido; print(mido.get_input_names())"` to list available ports. |
 | `channel_keys`        | int  | `0`     | MIDI channel (0-indexed) used by keyboard keys. `0` = ch1 (InControl mode). `8` = ch9 (normal mode). |
 | `channel_pads`        | int  | `9`     | MIDI channel (0-indexed) used by pads. Always `9` (ch10) on the LaunchKey Mini MK2. |
-| `enable_key_velocity` | bool | `false` | When `false`, all key note-on events use a fixed velocity of 100, ignoring how hard you press. Set to `true` to use the actual strike velocity from the hardware. |
+| `enable_key_velocity` | bool | `false` | When `false`, all key note-on events use a fixed velocity of 100, ignoring how hard you press. Set to `true` to use the actual strike velocity from the hardware. Loop Mode records the rendered note velocity, so loop playback follows this setting too. |
 
 ---
 
@@ -102,6 +102,26 @@ Settings for Chord Learning mode.
 
 ---
 
+## `[loop_mode]`
+
+Settings for Loop Mode.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `entry_pads` | string | `"16,3"` | Comma-separated pad numbers to press while holding KeySelect to enter or exit Loop Mode. Pad 16 acts as the bank separator; pads 1–10 contribute digits. Example: `"16,1"` would require Pad 16 then Pad 1. |
+| `n_tracks` | int | `4` | Number of independent loop tracks kept in memory for each Loop Mode session. |
+
+Loop Mode behavior notes:
+- The first non-empty track saved in a session becomes the reference loop length.
+- Later tracks are auto-fit to the nearest whole-number multiple of that reference when they are close enough, so small timing drift is corrected automatically.
+- Exiting Loop Mode or clearing all tracks resets the reference length.
+
+Control notes:
+- Record/playback use **Play Button 1 / Play Button 2** on the tested MK2 units (`108/109`).
+- The app accepts both common track-button mappings: `103/102` and `106/107` (`106 = left`, `107 = right` on the tested unit).
+
+---
+
 ## Environment variables
 
 | Variable | Values | Description |
@@ -118,4 +138,11 @@ Settings for Chord Learning mode.
 soundfont = "~/soundfonts/FluidR3_GM.sf2"
 gain      = 0.6
 driver    = "coreaudio"
+```
+
+**Loop Mode with 6 tracks:**
+```toml
+[loop_mode]
+entry_pads = "16,3"
+n_tracks = 6
 ```
