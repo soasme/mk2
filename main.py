@@ -367,6 +367,12 @@ def parse_events(msg, state):
                 ))
 
     elif msg.type == 'control_change':
+        if state['loop_mode_active'] and msg.control == CC_TRACK_RIGHT and msg.value == 127:
+            events.append(LoopModeTrackRightEvent())
+            return events
+        if state['loop_mode_active'] and msg.control == CC_TRACK_LEFT and msg.value == 127:
+            events.append(LoopModeTrackLeftEvent())
+            return events
         if CC_CHANNEL_SELECT is not None and msg.control == CC_CHANNEL_SELECT:
             if msg.value == 127:
                 state['channel_select_active'] = True

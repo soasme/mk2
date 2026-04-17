@@ -578,6 +578,41 @@ class LoopModeParseEventsTests(unittest.TestCase):
 
         self.assertFalse(any(isinstance(e, main.ProgramChangeEvent) for e in events))
 
+    def test_track_right_in_loop_mode(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        events = main.parse_events(
+            msg('control_change', control=main.CC_TRACK_RIGHT, value=127), state
+        )
+        self.assertEqual(len(events), 1)
+        self.assertIsInstance(events[0], main.LoopModeTrackRightEvent)
+
+    def test_track_left_in_loop_mode(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        events = main.parse_events(
+            msg('control_change', control=main.CC_TRACK_LEFT, value=127), state
+        )
+        self.assertEqual(len(events), 1)
+        self.assertIsInstance(events[0], main.LoopModeTrackLeftEvent)
+
+    def test_track_right_release_ignored(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        events = main.parse_events(
+            msg('control_change', channel=0, control=main.CC_TRACK_RIGHT, value=0), state
+        )
+        self.assertFalse(any(isinstance(e, main.LoopModeTrackRightEvent) for e in events))
+
+    def test_track_right_outside_loop_mode_is_passthrough_cc(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = False
+        events = main.parse_events(
+            msg('control_change', channel=0, control=main.CC_TRACK_RIGHT, value=127), state
+        )
+        self.assertTrue(any(isinstance(e, main.CCEvent) for e in events))
+        self.assertFalse(any(isinstance(e, main.LoopModeTrackRightEvent) for e in events))
+
 
 if __name__ == '__main__':
     unittest.main()
