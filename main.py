@@ -733,6 +733,29 @@ def handle_event(event, fs, ch_keys, ch_pads, sfid, state):
                     daemon=True,
                 )
                 t.start()
+    elif isinstance(event, LoopModePlaybackToggleEvent):
+        if not state['loop_mode_playing']:
+            state['loop_mode_playing'] = True
+            print("Loop Mode: playback started")
+            for i, track in enumerate(state['loop_mode_tracks']):
+                if track is not None:
+                    stop_ev = threading.Event()
+                    state['loop_mode_play_stop_events'][i] = stop_ev
+                    t = threading.Thread(
+                        target=loop_mode.play_track_loop,
+                        args=(track, fs, stop_ev),
+                        daemon=True,
+                    )
+                    t.start()
+        else:
+            state['loop_mode_playing'] = False
+            print("Loop Mode: playback stopped")
+            n = state['loop_mode_n_tracks']
+            for i in range(n):
+                stop_ev = state['loop_mode_play_stop_events'][i]
+                if stop_ev is not None:
+                    stop_ev.set()
+                state['loop_mode_play_stop_events'][i] = None
     elif isinstance(event, ChordLearningNoteChangedEvent):
         cancel_chord_learning_announce_timer(state)
         if not event.is_release:
@@ -754,6 +777,7 @@ def main():
     synth_cfg     = cfg.get('synth', {})
     challenge_cfg = cfg.get('note_challenge', {})
     cl_cfg        = cfg.get('chord_learning', {})
+    lm_cfg        = cfg.get('loop_mode', {})
 
     port    = midi_cfg.get('port', 'Launchkey Mini LK Mini MIDI')
     ch_keys = midi_cfg.get('channel_keys', 0)
@@ -807,6 +831,11 @@ def main():
         0.0,
         float(cl_cfg.get('announce_delay', state['chord_learning_announce_delay'])),
     )
+    state['loop_mode_entry'] = parse_entry_pads(lm_cfg.get('entry_pads', '16,3'))
+    n_tracks = int(lm_cfg.get('n_tracks', 4))
+    state['loop_mode_n_tracks'] = n_tracks
+    state['loop_mode_tracks'] = [None] * n_tracks
+    state['loop_mode_play_stop_events'] = [None] * n_tracks
     _bingo_sound = challenge_cfg.get('bingo_sound')
     if _bingo_sound:
         _bingo_path = pathlib.Path(_bingo_sound)

@@ -903,6 +903,53 @@ class LoopModeHandleEventTests(unittest.TestCase):
         self.assertTrue(len(threads_started) > 0)
         self.assertIsNotNone(state['loop_mode_play_stop_events'][0])
 
+    def test_playback_toggle_starts_playback_for_tracks_with_content(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        state['loop_mode_playing'] = False
+        state['loop_mode_tracks'][0] = loop_mode_module.LoopTrack(
+            events=[(0.0, 'note_on', 0, 60, 100)],
+            duration=1.0,
+        )
+        state['loop_mode_tracks'][1] = None
+
+        threads_started = []
+        original_thread = main.threading.Thread
+
+        class FakeThread:
+            def __init__(self, target=None, args=(), daemon=False):
+                self.target = target
+                self.daemon = daemon
+                threads_started.append(self)
+
+            def start(self):
+                pass
+
+        main.threading.Thread = FakeThread
+        try:
+            self._call_handle(main.LoopModePlaybackToggleEvent(), state)
+        finally:
+            main.threading.Thread = original_thread
+
+        self.assertTrue(state['loop_mode_playing'])
+        self.assertEqual(len(threads_started), 1)
+        self.assertIsNotNone(state['loop_mode_play_stop_events'][0])
+        self.assertIsNone(state['loop_mode_play_stop_events'][1])
+
+    def test_playback_toggle_stops_all_tracks(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        state['loop_mode_playing'] = True
+        stop_ev0 = threading.Event()
+        stop_ev1 = threading.Event()
+        state['loop_mode_play_stop_events'][0] = stop_ev0
+        state['loop_mode_play_stop_events'][1] = stop_ev1
+        self._call_handle(main.LoopModePlaybackToggleEvent(), state)
+        self.assertFalse(state['loop_mode_playing'])
+        self.assertTrue(stop_ev0.is_set())
+        self.assertTrue(stop_ev1.is_set())
+        self.assertTrue(all(e is None for e in state['loop_mode_play_stop_events']))
+
 
 if __name__ == '__main__':
     unittest.main()
