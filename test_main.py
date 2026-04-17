@@ -524,5 +524,26 @@ class LoopModeTests(unittest.TestCase):
         self.assertFalse(t.is_alive())
 
 
+class LoopModeParseEventsTests(unittest.TestCase):
+    def test_loop_mode_state_defaults(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        self.assertFalse(state['loop_mode_active'])
+        self.assertEqual(state['loop_mode_n_tracks'], 4)
+        self.assertEqual(len(state['loop_mode_tracks']), 4)
+        self.assertTrue(all(t is None for t in state['loop_mode_tracks']))
+        self.assertEqual(state['loop_mode_current_track'], 0)
+        self.assertFalse(state['loop_mode_recording'])
+        self.assertEqual(state['loop_mode_record_buffer'], [])
+        self.assertFalse(state['loop_mode_playing'])
+        self.assertEqual(len(state['loop_mode_play_stop_events']), 4)
+        self.assertTrue(all(e is None for e in state['loop_mode_play_stop_events']))
+        # entry = parse_entry_pads('16,3') = ([], True, [3])
+        self.assertEqual(state['loop_mode_entry'], ([], True, [3]))
+
+    def test_cc_track_constants(self):
+        self.assertEqual(main.CC_TRACK_LEFT, 103)
+        self.assertEqual(main.CC_TRACK_RIGHT, 102)
+
+
 if __name__ == '__main__':
     unittest.main()

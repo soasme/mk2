@@ -18,6 +18,7 @@ from dataclasses import dataclass
 import mido
 import fluidsynth
 from modes import chord_learning, note_challenge
+from modes import loop_mode
 
 DEBUG = os.environ.get('DEBUG') == '1'
 SAY_INSTRUMENT = os.environ.get('SAY_INSTRUMENT') == '1'
@@ -76,6 +77,8 @@ CONFIG_PATH = pathlib.Path(__file__).parent / 'config.toml'
 
 CC_PAD_SELECT     = 104   # Scene Up (upper round pad)
 CC_KEY_SELECT     = 105   # Scene Down (lower round pad)
+CC_TRACK_LEFT     = 103
+CC_TRACK_RIGHT    = 102
 CC_CHANNEL_SELECT = None  # TODO: discover with DEBUG=1 — hold button + press pads 1-9 to pick channel
 
 # Basic-mode note numbers for pads 1-10, mapped to digit (pad 10 → 0)
@@ -166,6 +169,30 @@ class ChordLearningNoteChangedEvent:
     held: frozenset  # current set of held MIDI notes
     is_release: bool  # whether this change came from a note-off
 
+@dataclass
+class EnterLoopModeEvent:
+    pass
+
+@dataclass
+class ExitLoopModeEvent:
+    pass
+
+@dataclass
+class LoopModeTrackLeftEvent:
+    pass
+
+@dataclass
+class LoopModeTrackRightEvent:
+    pass
+
+@dataclass
+class LoopModeRecordToggleEvent:
+    pass
+
+@dataclass
+class LoopModePlaybackToggleEvent:
+    pass
+
 
 # ---------------------------------------------------------------------------
 # Input state (mutated by parse_events)
@@ -229,6 +256,17 @@ def make_input_state(ch_keys, ch_pads, n_notes=4):
         'chord_learning_chord_set': 'core_set',
         'chord_learning_announce_delay': 0.2,  # seconds to wait after last key change
         'chord_learning_announce_timer': None,  # pending threading.Timer
+        # Loop Mode
+        'loop_mode_active': False,
+        'loop_mode_entry': parse_entry_pads('16,3'),
+        'loop_mode_n_tracks': 4,
+        'loop_mode_tracks': [None] * 4,
+        'loop_mode_current_track': 0,
+        'loop_mode_recording': False,
+        'loop_mode_record_start': 0.0,
+        'loop_mode_record_buffer': [],
+        'loop_mode_playing': False,
+        'loop_mode_play_stop_events': [None] * 4,
     }
 
 
