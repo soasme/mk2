@@ -18,6 +18,7 @@ from dataclasses import dataclass
 import mido
 import fluidsynth
 from modes import chord_learning, note_challenge
+from modes import loop_mode
 
 DEBUG = os.environ.get('DEBUG') == '1'
 SAY_INSTRUMENT = os.environ.get('SAY_INSTRUMENT') == '1'
@@ -76,6 +77,12 @@ CONFIG_PATH = pathlib.Path(__file__).parent / 'config.toml'
 
 CC_PAD_SELECT     = 104   # Scene Up (upper round pad)
 CC_KEY_SELECT     = 105   # Scene Down (lower round pad)
+CC_TRACK_LEFT     = 103   # Track Left (left arrow button)
+CC_TRACK_RIGHT    = 102   # Track Right (right arrow button)
+CC_TRACK_LEFT_ALT = 106   # Alternate Track Left mapping seen on some devices
+CC_TRACK_RIGHT_ALT = 107  # Alternate Track Right mapping seen on some devices
+CC_LOOP_RECORD    = 108   # Play Button 1 transport button
+CC_LOOP_PLAYBACK  = 109   # Play Button 2 transport button
 CC_CHANNEL_SELECT = None  # TODO: discover with DEBUG=1 — hold button + press pads 1-9 to pick channel
 
 # Basic-mode note numbers for pads 1-10, mapped to digit (pad 10 → 0)
@@ -166,6 +173,30 @@ class ChordLearningNoteChangedEvent:
     held: frozenset  # current set of held MIDI notes
     is_release: bool  # whether this change came from a note-off
 
+@dataclass
+class EnterLoopModeEvent:
+    pass
+
+@dataclass
+class ExitLoopModeEvent:
+    pass
+
+@dataclass
+class LoopModeTrackLeftEvent:
+    pass
+
+@dataclass
+class LoopModeTrackRightEvent:
+    pass
+
+@dataclass
+class LoopModeRecordToggleEvent:
+    pass
+
+@dataclass
+class LoopModePlaybackToggleEvent:
+    pass
+
 
 # ---------------------------------------------------------------------------
 # Input state (mutated by parse_events)
@@ -229,6 +260,19 @@ def make_input_state(ch_keys, ch_pads, n_notes=4):
         'chord_learning_chord_set': 'core_set',
         'chord_learning_announce_delay': 0.2,  # seconds to wait after last key change
         'chord_learning_announce_timer': None,  # pending threading.Timer
+        # Loop Mode
+        'loop_mode_active': False,
+        'loop_mode_entry': parse_entry_pads('16,3'),
+        'loop_mode_n_tracks': 4,
+        'loop_mode_tracks': [None] * 4,
+        'loop_mode_current_track': 0,
+        'loop_mode_recording': False,
+        'loop_mode_record_start': 0.0,
+        'loop_mode_record_buffer': [],
+        'loop_mode_reference_duration': None,
+        'loop_mode_reference_subdivision': None,
+        'loop_mode_playing': False,
+        'loop_mode_play_stop_events': [None] * 4,
     }
 
 
@@ -277,10 +321,11 @@ def parse_events(msg, state):
 
             # Reroute hardware key notes to current_keys_channel
             ch = state['current_keys_channel'] if msg.channel == state['ch_keys'] else msg.channel
+            vel = msg.velocity if state.get('enable_key_velocity') else 100
             # Track the actual output channel so KeySelect can target it
             if msg.channel != state['ch_pads']:
                 state['last_keys_channel'] = ch
-            events.append(NoteOnEvent(ch, msg.note, msg.velocity))
+            events.append(NoteOnEvent(ch, msg.note, vel))
 
             # Note Challenge Mode: track key presses and check for a match
             if state['note_challenge_active'] and msg.channel == state['ch_keys']:
@@ -308,6 +353,13 @@ def parse_events(msg, state):
                     is_release=False,
                 ))
 
+            # Loop Mode: buffer note events during recording
+            if state['loop_mode_recording']:
+                offset = time.time() - state['loop_mode_record_start']
+                state['loop_mode_record_buffer'].append(
+                    (offset, 'note_on', ch, msg.note, vel)
+                )
+
     elif msg.type == 'note_off':
         if msg.note in state['channel_select_captured']:
             state['channel_select_captured'].discard(msg.note)
@@ -328,7 +380,32 @@ def parse_events(msg, state):
                     is_release=True,
                 ))
 
+            # Loop Mode: buffer note_off during recording
+            if state['loop_mode_recording']:
+                offset = time.time() - state['loop_mode_record_start']
+                state['loop_mode_record_buffer'].append(
+                    (offset, 'note_off', ch, msg.note, 0)
+                )
+
     elif msg.type == 'control_change':
+        if (state['loop_mode_active']
+                and msg.control in (CC_TRACK_RIGHT, CC_TRACK_RIGHT_ALT)
+                and msg.value == 127):
+            events.append(LoopModeTrackRightEvent())
+            return events
+        if (state['loop_mode_active']
+                and msg.control in (CC_TRACK_LEFT, CC_TRACK_LEFT_ALT)
+                and msg.value == 127):
+            events.append(LoopModeTrackLeftEvent())
+            return events
+        if state['loop_mode_active'] and msg.control == CC_LOOP_RECORD:
+            if msg.value == 127:
+                events.append(LoopModeRecordToggleEvent())
+            return events
+        if state['loop_mode_active'] and msg.control == CC_LOOP_PLAYBACK:
+            if msg.value == 127:
+                events.append(LoopModePlaybackToggleEvent())
+            return events
         if CC_CHANNEL_SELECT is not None and msg.control == CC_CHANNEL_SELECT:
             if msg.value == 127:
                 state['channel_select_active'] = True
@@ -349,6 +426,8 @@ def parse_events(msg, state):
                 print("PadSelect Button is released")
                 if state['pad_select_program'] is not None:
                     events.append(PercussionChangeEvent(pads_program=state['pad_select_program']))
+                elif state['loop_mode_active']:
+                    events.append(LoopModeRecordToggleEvent())
 
         elif msg.control == CC_KEY_SELECT:
             if msg.value == 127:
@@ -372,6 +451,7 @@ def parse_events(msg, state):
                 # Configured pad sequence: toggle Note Challenge Mode
                 e_digits, e_bank_sep, e_bank_digits = state['note_challenge_entry']
                 cl_digits, cl_bank_sep, cl_bank_digits = state['chord_learning_entry']
+                lm_digits, lm_bank_sep, lm_bank_digits = state['loop_mode_entry']
                 if (digits == e_digits
                         and state['key_select_bank_sep'] == e_bank_sep
                         and bank_digits == e_bank_digits):
@@ -383,6 +463,16 @@ def parse_events(msg, state):
                         and state['key_select_bank_sep'] == cl_bank_sep
                         and bank_digits == cl_bank_digits):
                     events.append(EnterChordLearningEvent())
+                elif (digits == lm_digits
+                        and state['key_select_bank_sep'] == lm_bank_sep
+                        and bank_digits == lm_bank_digits):
+                    if state['loop_mode_active']:
+                        events.append(ExitLoopModeEvent())
+                    else:
+                        events.append(EnterLoopModeEvent())
+                elif (not digits and not state['key_select_bank_sep']
+                        and not bank_digits and state['loop_mode_active']):
+                    events.append(LoopModePlaybackToggleEvent())
                 elif digits:
                     if key_select_channel == state['ch_pads']:
                         print(
@@ -593,6 +683,142 @@ def handle_event(event, fs, ch_keys, ch_pads, sfid, state):
         state['chord_learning_held'] = set()
         print("Chord Learning Mode: exited")
         speak("Goodbye")
+    elif isinstance(event, EnterLoopModeEvent):
+        # Stop any existing playback
+        for i, stop_ev in enumerate(state['loop_mode_play_stop_events']):
+            if stop_ev is not None:
+                stop_ev.set()
+        n = state['loop_mode_n_tracks']
+        state['loop_mode_active'] = True
+        state['loop_mode_tracks'] = [None] * n
+        state['loop_mode_current_track'] = 0
+        state['loop_mode_recording'] = False
+        state['loop_mode_record_buffer'] = []
+        state['loop_mode_reference_duration'] = None
+        state['loop_mode_reference_subdivision'] = None
+        state['loop_mode_playing'] = False
+        state['loop_mode_play_stop_events'] = [None] * n
+        print("Loop Mode: active")
+        speak("Loop Mode")
+    elif isinstance(event, ExitLoopModeEvent):
+        for i, stop_ev in enumerate(state['loop_mode_play_stop_events']):
+            if stop_ev is not None:
+                stop_ev.set()
+        state['loop_mode_active'] = False
+        state['loop_mode_playing'] = False
+        state['loop_mode_recording'] = False
+        state['loop_mode_reference_duration'] = None
+        state['loop_mode_reference_subdivision'] = None
+        state['loop_mode_play_stop_events'] = [None] * state['loop_mode_n_tracks']
+        print("Loop Mode: exited")
+        speak("Goodbye")
+    elif isinstance(event, LoopModeTrackRightEvent):
+        n = state['loop_mode_n_tracks']
+        state['loop_mode_current_track'] = (state['loop_mode_current_track'] + 1) % n
+        print(f"Loop Mode: track {state['loop_mode_current_track'] + 1}/{n}")
+    elif isinstance(event, LoopModeTrackLeftEvent):
+        n = state['loop_mode_n_tracks']
+        state['loop_mode_current_track'] = (state['loop_mode_current_track'] - 1) % n
+        print(f"Loop Mode: track {state['loop_mode_current_track'] + 1}/{n}")
+    elif isinstance(event, LoopModeRecordToggleEvent):
+        idx = state['loop_mode_current_track']
+        if not state['loop_mode_recording']:
+            # Start recording: stop current track's playback thread
+            stop_ev = state['loop_mode_play_stop_events'][idx]
+            if stop_ev is not None:
+                stop_ev.set()
+                state['loop_mode_play_stop_events'][idx] = None
+            state['loop_mode_recording'] = True
+            state['loop_mode_record_start'] = time.time()
+            state['loop_mode_record_buffer'] = []
+            print(f"Loop Mode: recording track {idx + 1}")
+        else:
+            # Stop recording
+            state['loop_mode_recording'] = False
+            duration = time.time() - state['loop_mode_record_start']
+            buf = state['loop_mode_record_buffer']
+            state['loop_mode_record_buffer'] = []
+            if buf:
+                lead_in = buf[0][0]
+                trimmed = [
+                    (offset - lead_in, event_type, channel, note, velocity)
+                    for offset, event_type, channel, note, velocity in buf
+                ]
+                trimmed_duration = max(trimmed[-1][0], duration - lead_in)
+                track = loop_mode.LoopTrack(
+                    events=trimmed,
+                    duration=trimmed_duration,
+                )
+                fit_info = None
+                quantize_info = None
+                reference_duration = state['loop_mode_reference_duration']
+                if reference_duration is None:
+                    track, quantize_info = loop_mode.quantize_first_track(track)
+                    state['loop_mode_reference_duration'] = track.duration
+                    state['loop_mode_reference_subdivision'] = (
+                        quantize_info['subdivision'] if quantize_info is not None else None
+                    )
+                else:
+                    track, fit_info = loop_mode.fit_track_to_reference(track, reference_duration)
+                    reference_subdivision = state.get('loop_mode_reference_subdivision')
+                    if fit_info is not None and reference_subdivision:
+                        grid_step = reference_duration / reference_subdivision
+                        track, quantize_info = loop_mode.quantize_track_to_step(track, grid_step)
+                state['loop_mode_tracks'][idx] = track
+                if quantize_info is not None:
+                    denominator = quantize_info.get('subdivision')
+                    if denominator is None and fit_info is not None and state.get('loop_mode_reference_subdivision'):
+                        denominator = state['loop_mode_reference_subdivision'] * fit_info['multiple']
+                    print(
+                        "Loop Mode: "
+                        f"track {idx + 1} timing aligned to 1/{denominator} of loop length"
+                    )
+                if fit_info is not None and abs(fit_info['source_duration'] - fit_info['target_duration']) > 1e-6:
+                    print(
+                        "Loop Mode: "
+                        f"track {idx + 1} auto-fit to {fit_info['multiple']}x reference "
+                        f"({fit_info['source_duration']:.2f}s -> {fit_info['target_duration']:.2f}s)"
+                    )
+                print(f"Loop Mode: track {idx + 1} saved ({duration:.2f}s, {len(buf)} events)")
+            else:
+                state['loop_mode_tracks'][idx] = None
+                if all(track is None for track in state['loop_mode_tracks']):
+                    state['loop_mode_reference_duration'] = None
+                    state['loop_mode_reference_subdivision'] = None
+                print(f"Loop Mode: track {idx + 1} cleared")
+            # If global playback is on and track has content, restart playback for this track
+            if state['loop_mode_playing'] and state['loop_mode_tracks'][idx] is not None:
+                stop_ev = threading.Event()
+                state['loop_mode_play_stop_events'][idx] = stop_ev
+                t = threading.Thread(
+                    target=loop_mode.play_track_loop,
+                    args=(state['loop_mode_tracks'][idx], fs, stop_ev),
+                    daemon=True,
+                )
+                t.start()
+    elif isinstance(event, LoopModePlaybackToggleEvent):
+        if not state['loop_mode_playing']:
+            state['loop_mode_playing'] = True
+            print("Loop Mode: playback started")
+            for i, track in enumerate(state['loop_mode_tracks']):
+                if track is not None:
+                    stop_ev = threading.Event()
+                    state['loop_mode_play_stop_events'][i] = stop_ev
+                    t = threading.Thread(
+                        target=loop_mode.play_track_loop,
+                        args=(track, fs, stop_ev),
+                        daemon=True,
+                    )
+                    t.start()
+        else:
+            state['loop_mode_playing'] = False
+            print("Loop Mode: playback stopped")
+            n = state['loop_mode_n_tracks']
+            for i in range(n):
+                stop_ev = state['loop_mode_play_stop_events'][i]
+                if stop_ev is not None:
+                    stop_ev.set()
+                state['loop_mode_play_stop_events'][i] = None
     elif isinstance(event, ChordLearningNoteChangedEvent):
         cancel_chord_learning_announce_timer(state)
         if not event.is_release:
@@ -614,6 +840,7 @@ def main():
     synth_cfg     = cfg.get('synth', {})
     challenge_cfg = cfg.get('note_challenge', {})
     cl_cfg        = cfg.get('chord_learning', {})
+    lm_cfg        = cfg.get('loop_mode', {})
 
     port    = midi_cfg.get('port', 'Launchkey Mini LK Mini MIDI')
     ch_keys = midi_cfg.get('channel_keys', 0)
@@ -667,6 +894,11 @@ def main():
         0.0,
         float(cl_cfg.get('announce_delay', state['chord_learning_announce_delay'])),
     )
+    state['loop_mode_entry'] = parse_entry_pads(lm_cfg.get('entry_pads', '16,3'))
+    n_tracks = int(lm_cfg.get('n_tracks', 4))
+    state['loop_mode_n_tracks'] = n_tracks
+    state['loop_mode_tracks'] = [None] * n_tracks
+    state['loop_mode_play_stop_events'] = [None] * n_tracks
     _bingo_sound = challenge_cfg.get('bingo_sound')
     if _bingo_sound:
         _bingo_path = pathlib.Path(_bingo_sound)

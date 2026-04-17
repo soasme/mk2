@@ -21,6 +21,11 @@ LaunchKey Mini MK2 (USB)
         ├─ NoteOnEvent / NoteOffEvent
         ├─ PitchBendEvent / CCEvent
         ├─ ProgramChangeEvent / PercussionChangeEvent
+        ├─ EnterChordLearningEvent / ExitChordLearningEvent /
+        │  ChordLearningNoteChangedEvent
+        ├─ EnterLoopModeEvent / ExitLoopModeEvent /
+        │  LoopModeTrackLeftEvent / LoopModeTrackRightEvent /
+        │  LoopModeRecordToggleEvent / LoopModePlaybackToggleEvent
         └─ NoteChallengePlayEvent / NoteChallengeNewEvent /
            NoteChallengeHintEvent / NoteChallengeBingoEvent
                 │
@@ -42,6 +47,7 @@ LaunchKey Mini MK2 (USB)
 | `config.toml`               | Runtime configuration — MIDI ports, SoundFont path, GM bank/program, Note Challenge settings |
 | `modes/note_challenge.py`   | Note Challenge ear-training game logic (pure helpers, no I/O) |
 | `modes/chord_learning.py`   | Chord Learning Mode — interval-set chord detection (pure functions, no I/O) |
+| `modes/loop_mode.py`        | Loop Mode track storage and per-track playback loop (pure helpers, no I/O) |
 | `modes/__init__.py`         | Package marker |
 | `Brewfile`                  | Homebrew dependencies (`brew bundle` installs `fluid-synth`) |
 | `CONFIGURATION.md`          | Reference for every config.toml option |
@@ -57,6 +63,7 @@ FluidSynth manages its own internal audio thread. `main.py` is single-threaded: 
 Exceptions:
 - `note_challenge.play_notes_async` spawns a short-lived daemon thread to play a note sequence without blocking the MIDI loop
 - Chord Learning mode uses a short-lived `threading.Timer` to debounce chord announcements after held-note changes
+- Loop Mode uses one daemon thread per playing track so multi-track loops can run without blocking MIDI input
 
 ## Input State Machine
 
@@ -78,6 +85,12 @@ Exceptions:
 | `chord_learning_chord_set` | Active chord recognition set name |
 | `chord_learning_announce_delay` | Debounce delay before speaking a detected chord |
 | `chord_learning_announce_timer` | Pending timer for the next debounced chord announcement |
+| `loop_mode_active` | True when Loop Mode is running |
+| `loop_mode_current_track` | Selected loop track index (0-based) |
+| `loop_mode_recording` | True while the current track is being recorded |
+| `loop_mode_record_buffer` | Timestamped note events captured for the current recording pass |
+| `loop_mode_playing` | True when loop playback is enabled globally |
+| `loop_mode_play_stop_events` | Per-track `threading.Event` objects used to stop playback threads |
 
 ## Scene Button Controls
 
@@ -125,6 +138,43 @@ While active:
 Configuration in `config.toml` under `[chord_learning]`: `entry_pads`, `chord_set` (`"minimal"`, `"core_set"`, `"extended"`), `announce_delay` (seconds).
 
 Logic is in `modes/chord_learning.py` (pure functions, no I/O). Orchestration is in `handle_event` in `main.py`.
+
+## Loop Mode
+
+A multi-track loop recorder. While active, the user can record note sequences per track and loop them back.
+
+Entry/exit: hold KeySelect and press the pad sequence configured in `loop_mode.entry_pads` (default `16,3`). Pressing while active exits, stops playback, and leaves the mode. The next entry starts with a clean slate.
+
+### Controls (while in Loop Mode)
+
+| Control | Action |
+|---------|--------|
+| Track Left (CC 103) | Switch to previous track (wraps) |
+| Track Right (CC 102) | Switch to next track (wraps) |
+| Scene Up (CC 104) bare tap (no pad pressed) | Toggle recording for the current track |
+| Scene Down (CC 105) bare tap (no pad pressed) | Toggle playback of all tracks |
+| Play Button 1 (CC 108) | Toggle recording for the current track |
+| Play Button 2 (CC 109) | Toggle playback of all tracks |
+| KeySelect + digit pads | Change instrument on the keys channel (works normally) |
+| PadSelect + digit pad 1-9 | Change percussion kit on the pads channel (works normally) |
+
+### Recording lifecycle
+
+- Press Scene Up (bare tap) to start recording the current track. Notes still play through FluidSynth normally.
+- Only `note_on` / `note_off` events on the configured keys and pads channels are recorded.
+- Press Scene Up again to stop. If notes were captured, they replace the current track's loop. If nothing was captured, the current track is cleared.
+- If global playback is on when recording stops, the saved track auto-restarts playing.
+- When recording starts, only the current track's playback pauses. Other playing tracks continue looping.
+
+### Playback
+
+- Press Scene Down (bare tap) to start looping all tracks that have content.
+- Press Scene Down again to stop all tracks.
+- Each track loops independently at the duration captured during its recording pass.
+
+Configuration in `config.toml` under `[loop_mode]`: `entry_pads`, `n_tracks`.
+
+Logic is in `modes/loop_mode.py` (pure track data + playback loop). Orchestration is in `handle_event` in `main.py`.
 
 ## SoundFont and GM Programs
 

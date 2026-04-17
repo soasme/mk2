@@ -498,6 +498,46 @@ If you want more time before it speaks, increase the delay:
 announce_delay = 0.35
 ```
 
+### Loop Mode
+
+Loop Mode is a multi-track looper built into the app.
+
+**Enter the mode:** Hold **KeySelect** (Scene Down), press **Pad 16**, then **Pad 3**, then release KeySelect.
+
+While active:
+
+| Control | Action |
+|-----|--------|
+| Play Button 1 | Start/stop recording the current track |
+| Play Button 2 | Start/stop playback of all saved tracks |
+| Track Left / Track Right | Move to the previous / next track |
+| KeySelect + digit pads | Change the keys instrument normally |
+| PadSelect + digit pad 1-9 | Change the drum kit normally |
+
+Notes:
+- The app accepts both common MK2 transport mappings. On some units the track buttons show up as `103/102`; on others they show up as `106/107` (`106 = left`, `107 = right`).
+- On the tested units, record/playback are sent by **Play Button 1 / Play Button 2** (`108/109`), not the round Scene buttons.
+
+Recording behavior:
+- The **first non-empty track** you save becomes the timing reference for the current loop session.
+- Later tracks are automatically fit to the nearest whole-number multiple of that first track (`1x`, `2x`, `3x`, etc.) when they are close enough.
+- If the timing is only a little off, the app gently rescales the saved event timings so the track lands on the shared loop length and stays in tempo.
+- If the recording is too far away from any whole multiple, it is left unchanged.
+- Playback starts from the first recorded note rather than replaying the silence before you started playing.
+- If `enable_key_velocity = false`, loop playback uses the same fixed velocity `100` as live key playback.
+
+**Exit:** hold KeySelect, press Pad 16, press Pad 3, release KeySelect.
+
+Exiting Loop Mode or clearing all tracks resets the timing reference.
+
+Example config:
+
+```toml
+[loop_mode]
+entry_pads = "16,3"
+n_tracks = 4
+```
+
 ### PadSelect — change the drum kit
 
 Hold the **Scene Up** button (PadSelect), press one pad (1–9) to select a GM percussion kit, then release:

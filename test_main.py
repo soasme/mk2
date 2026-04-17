@@ -1,6 +1,8 @@
 import contextlib
 import io
 import sys
+import threading
+import time
 import types
 import unittest
 from types import SimpleNamespace
@@ -10,6 +12,7 @@ sys.modules.setdefault('fluidsynth', types.SimpleNamespace())
 
 import main
 from modes import chord_learning
+import modes.loop_mode as loop_mode_module
 
 
 def msg(msg_type, **kwargs):
@@ -20,6 +23,8 @@ class ParseEventsTests(unittest.TestCase):
     def test_scene_button_cc_mappings(self):
         self.assertEqual(main.CC_PAD_SELECT, 104)
         self.assertEqual(main.CC_KEY_SELECT, 105)
+        self.assertEqual(main.CC_LOOP_RECORD, 108)
+        self.assertEqual(main.CC_LOOP_PLAYBACK, 109)
 
     def test_key_select_press_prints_latched_target_channel(self):
         state = main.make_input_state(ch_keys=0, ch_pads=9)
@@ -455,6 +460,900 @@ class ChordLearningHandleEventTests(unittest.TestCase):
         self.assertFalse(state['chord_learning_active'])
         self.assertEqual(state['chord_learning_held'], set())
         self.assertIsNone(state['chord_learning_announce_timer'])
+
+
+
+class LoopModeTests(unittest.TestCase):
+    def test_loop_track_default_is_empty(self):
+        track = loop_mode_module.LoopTrack(events=[], duration=0.0)
+        self.assertEqual(track.events, [])
+        self.assertEqual(track.duration, 0.0)
+
+    def test_quantize_track_to_step_snaps_to_known_grid(self):
+        track = loop_mode_module.LoopTrack(
+            events=[
+                (0.48, 'note_on', 0, 60, 100),
+                (0.77, 'note_off', 0, 60, 0),
+                (1.52, 'note_on', 0, 62, 100),
+                (1.77, 'note_off', 0, 62, 0),
+            ],
+            duration=2.0,
+        )
+
+        quantized, info = loop_mode_module.quantize_track_to_step(track, step=0.5)
+
+        self.assertAlmostEqual(quantized.events[0][0], 0.5, places=2)
+        self.assertAlmostEqual(quantized.events[2][0], 1.5, places=2)
+        self.assertIsNotNone(info)
+
+    def test_quantize_track_to_step_preserves_note_lengths(self):
+        track = loop_mode_module.LoopTrack(
+            events=[
+                (0.48, 'note_on', 0, 60, 100),
+                (0.77, 'note_off', 0, 60, 0),
+            ],
+            duration=2.0,
+        )
+
+        quantized, _ = loop_mode_module.quantize_track_to_step(track, step=0.5)
+
+        self.assertAlmostEqual(quantized.events[0][0], 0.5, places=2)
+        self.assertAlmostEqual(quantized.events[1][0], 0.79, places=2)
+
+    def test_quantize_track_to_step_leaves_far_events_unchanged(self):
+        track = loop_mode_module.LoopTrack(
+            events=[
+                (0.28, 'note_on', 0, 60, 100),
+                (0.77, 'note_off', 0, 60, 0),
+                (1.34, 'note_on', 0, 62, 100),
+                (1.77, 'note_off', 0, 62, 0),
+            ],
+            duration=2.0,
+        )
+
+        quantized, info = loop_mode_module.quantize_track_to_step(track, step=0.5)
+
+        self.assertIs(quantized, track)
+        self.assertIsNone(info)
+
+    def test_quantize_first_track_snaps_to_quarter_grid(self):
+        track = loop_mode_module.LoopTrack(
+            events=[
+                (0.03, 'note_on', 0, 60, 100),
+                (0.24, 'note_off', 0, 60, 0),
+                (1.07, 'note_on', 0, 62, 100),
+                (1.26, 'note_off', 0, 62, 0),
+                (2.02, 'note_on', 0, 64, 100),
+                (2.29, 'note_off', 0, 64, 0),
+                (2.94, 'note_on', 0, 65, 100),
+                (3.21, 'note_off', 0, 65, 0),
+            ],
+            duration=4.0,
+        )
+
+        quantized, info = loop_mode_module.quantize_first_track(track)
+
+        self.assertEqual(info['subdivision'], 4)
+        self.assertEqual(
+            [offset for offset, event_type, *_ in quantized.events if event_type == 'note_on'],
+            [0.0, 1.0, 2.0, 3.0],
+        )
+
+    def test_quantize_first_track_clusters_strummed_chords(self):
+        track = loop_mode_module.LoopTrack(
+            events=[
+                (0.00, 'note_on', 1, 48, 100),
+                (0.03, 'note_on', 1, 55, 100),
+                (0.06, 'note_on', 1, 52, 100),
+                (0.22, 'note_off', 1, 52, 0),
+                (0.24, 'note_off', 1, 55, 0),
+                (0.26, 'note_off', 1, 48, 0),
+                (1.02, 'note_on', 1, 48, 100),
+                (1.05, 'note_on', 1, 55, 100),
+                (1.08, 'note_on', 1, 52, 100),
+                (1.22, 'note_off', 1, 52, 0),
+                (1.24, 'note_off', 1, 55, 0),
+                (1.26, 'note_off', 1, 48, 0),
+                (2.04, 'note_on', 1, 48, 100),
+                (2.07, 'note_on', 1, 55, 100),
+                (2.10, 'note_on', 1, 52, 100),
+                (2.22, 'note_off', 1, 52, 0),
+                (2.24, 'note_off', 1, 55, 0),
+                (2.26, 'note_off', 1, 48, 0),
+                (2.96, 'note_on', 1, 48, 100),
+                (2.99, 'note_on', 1, 52, 100),
+                (3.02, 'note_on', 1, 55, 100),
+                (3.22, 'note_off', 1, 52, 0),
+                (3.24, 'note_off', 1, 55, 0),
+                (3.26, 'note_off', 1, 48, 0),
+            ],
+            duration=4.0,
+        )
+
+        quantized, info = loop_mode_module.quantize_first_track(track)
+
+        self.assertEqual(info['subdivision'], 4)
+        note_on_offsets = [offset for offset, event_type, *_ in quantized.events if event_type == 'note_on']
+        self.assertEqual(note_on_offsets[0:3], [0.0, 0.03, 0.06])
+        self.assertEqual(note_on_offsets[3:6], [1.0, 1.03, 1.06])
+
+    def test_quantize_first_track_snaps_to_triplet_grid(self):
+        track = loop_mode_module.LoopTrack(
+            events=[
+                (0.02, 'note_on', 0, 60, 100),
+                (0.31, 'note_off', 0, 60, 0),
+                (0.96, 'note_on', 0, 62, 100),
+                (1.31, 'note_off', 0, 62, 0),
+                (2.04, 'note_on', 0, 64, 100),
+                (2.32, 'note_off', 0, 64, 0),
+            ],
+            duration=3.0,
+        )
+
+        quantized, info = loop_mode_module.quantize_first_track(track)
+
+        self.assertEqual(info['subdivision'], 3)
+        self.assertEqual(
+            [offset for offset, event_type, *_ in quantized.events if event_type == 'note_on'],
+            [0.0, 1.0, 2.0],
+        )
+
+    def test_quantize_first_track_leaves_unstructured_timing_unchanged(self):
+        track = loop_mode_module.LoopTrack(
+            events=[
+                (0.0, 'note_on', 0, 60, 100),
+                (0.49, 'note_off', 0, 60, 0),
+                (1.15, 'note_on', 0, 62, 100),
+                (1.91, 'note_off', 0, 62, 0),
+                (2.63, 'note_on', 0, 64, 100),
+                (3.41, 'note_off', 0, 64, 0),
+            ],
+            duration=4.0,
+        )
+
+        quantized, info = loop_mode_module.quantize_first_track(track)
+
+        self.assertIs(quantized, track)
+        self.assertIsNone(info)
+
+    def test_fit_track_to_reference_snaps_to_nearest_multiple(self):
+        track = loop_mode_module.LoopTrack(
+            events=[
+                (0.0, 'note_on', 0, 60, 100),
+                (1.9, 'note_off', 0, 60, 0),
+            ],
+            duration=1.9,
+        )
+
+        fitted, info = loop_mode_module.fit_track_to_reference(track, reference_duration=1.0)
+
+        self.assertAlmostEqual(fitted.duration, 2.0, places=2)
+        self.assertAlmostEqual(fitted.events[-1][0], 2.0, places=2)
+        self.assertEqual(info['multiple'], 2)
+
+    def test_fit_track_to_reference_leaves_far_duration_unchanged(self):
+        track = loop_mode_module.LoopTrack(
+            events=[
+                (0.0, 'note_on', 0, 60, 100),
+                (1.6, 'note_off', 0, 60, 0),
+            ],
+            duration=1.6,
+        )
+
+        fitted, info = loop_mode_module.fit_track_to_reference(track, reference_duration=1.0)
+
+        self.assertIs(fitted, track)
+        self.assertIsNone(info)
+
+    def test_play_track_loop_plays_events_in_order(self):
+        played = []
+        stop_event = threading.Event()
+
+        class FakeSynth:
+            def noteon(self, channel, note, velocity):
+                played.append(('noteon', channel, note, velocity))
+
+            def noteoff(self, channel, note):
+                played.append(('noteoff', channel, note))
+
+        track = loop_mode_module.LoopTrack(
+            events=[
+                (0.0,  'note_on',  0, 60, 100),
+                (0.05, 'note_off', 0, 60, 0),
+            ],
+            duration=0.1,
+        )
+
+        t = threading.Thread(
+            target=loop_mode_module.play_track_loop,
+            args=(track, FakeSynth(), stop_event),
+            daemon=True,
+        )
+        t.start()
+        time.sleep(0.25)  # let it loop twice
+        stop_event.set()
+        t.join(timeout=1.0)
+
+        # At least two iterations: noteon, noteoff, noteon, noteoff
+        self.assertGreaterEqual(played.count(('noteon', 0, 60, 100)), 2)
+        self.assertGreaterEqual(played.count(('noteoff', 0, 60)), 2)
+
+    def test_play_track_loop_stops_promptly_on_stop_event(self):
+        stop_event = threading.Event()
+
+        class FakeSynth:
+            def noteon(self, *a): pass
+            def noteoff(self, *a): pass
+
+        track = loop_mode_module.LoopTrack(
+            events=[(0.0, 'note_on', 0, 60, 100)],
+            duration=60.0,  # very long loop
+        )
+
+        t = threading.Thread(
+            target=loop_mode_module.play_track_loop,
+            args=(track, FakeSynth(), stop_event),
+            daemon=True,
+        )
+        t.start()
+        time.sleep(0.05)
+        stop_event.set()
+        t.join(timeout=0.5)
+        self.assertFalse(t.is_alive())
+
+
+class LoopModeParseEventsTests(unittest.TestCase):
+    def test_loop_mode_state_defaults(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        self.assertFalse(state['loop_mode_active'])
+        self.assertEqual(state['loop_mode_n_tracks'], 4)
+        self.assertEqual(len(state['loop_mode_tracks']), 4)
+        self.assertTrue(all(t is None for t in state['loop_mode_tracks']))
+        self.assertEqual(state['loop_mode_current_track'], 0)
+        self.assertFalse(state['loop_mode_recording'])
+        self.assertEqual(state['loop_mode_record_start'], 0.0)
+        self.assertEqual(state['loop_mode_record_buffer'], [])
+        self.assertIsNone(state['loop_mode_reference_duration'])
+        self.assertIsNone(state['loop_mode_reference_subdivision'])
+        self.assertFalse(state['loop_mode_playing'])
+        self.assertEqual(len(state['loop_mode_play_stop_events']), 4)
+        self.assertTrue(all(e is None for e in state['loop_mode_play_stop_events']))
+        # entry = parse_entry_pads('16,3') = ([], True, [3])
+        self.assertEqual(state['loop_mode_entry'], ([], True, [3]))
+
+    def test_cc_track_constants(self):
+        self.assertEqual(main.CC_TRACK_LEFT, 103)
+        self.assertEqual(main.CC_TRACK_RIGHT, 102)
+        self.assertEqual(main.CC_TRACK_LEFT_ALT, 106)
+        self.assertEqual(main.CC_TRACK_RIGHT_ALT, 107)
+
+    def test_enter_loop_mode(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        with contextlib.redirect_stdout(io.StringIO()):
+            main.parse_events(msg('control_change', control=main.CC_KEY_SELECT, value=127), state)
+            main.parse_events(msg('note_on', note=47, velocity=127, channel=state['ch_pads']), state)
+            main.parse_events(msg('note_on', note=42, velocity=127, channel=state['ch_pads']), state)
+            events = main.parse_events(msg('control_change', control=main.CC_KEY_SELECT, value=0), state)
+
+        self.assertEqual(len(events), 1)
+        self.assertIsInstance(events[0], main.EnterLoopModeEvent)
+
+    def test_exit_loop_mode(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        with contextlib.redirect_stdout(io.StringIO()):
+            main.parse_events(msg('control_change', control=main.CC_KEY_SELECT, value=127), state)
+            main.parse_events(msg('note_on', note=47, velocity=127, channel=state['ch_pads']), state)
+            main.parse_events(msg('note_on', note=42, velocity=127, channel=state['ch_pads']), state)
+            events = main.parse_events(msg('control_change', control=main.CC_KEY_SELECT, value=0), state)
+
+        self.assertEqual(len(events), 1)
+        self.assertIsInstance(events[0], main.ExitLoopModeEvent)
+
+    def test_loop_mode_entry_does_not_also_emit_program_change(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        with contextlib.redirect_stdout(io.StringIO()):
+            main.parse_events(msg('control_change', control=main.CC_KEY_SELECT, value=127), state)
+            main.parse_events(msg('note_on', note=47, velocity=127, channel=state['ch_pads']), state)
+            main.parse_events(msg('note_on', note=42, velocity=127, channel=state['ch_pads']), state)
+            events = main.parse_events(msg('control_change', control=main.CC_KEY_SELECT, value=0), state)
+
+        self.assertFalse(any(isinstance(e, main.ProgramChangeEvent) for e in events))
+
+    def test_track_right_in_loop_mode(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        events = main.parse_events(
+            msg('control_change', control=main.CC_TRACK_RIGHT, value=127), state
+        )
+        self.assertEqual(len(events), 1)
+        self.assertIsInstance(events[0], main.LoopModeTrackRightEvent)
+
+    def test_track_left_in_loop_mode(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        events = main.parse_events(
+            msg('control_change', control=main.CC_TRACK_LEFT, value=127), state
+        )
+        self.assertEqual(len(events), 1)
+        self.assertIsInstance(events[0], main.LoopModeTrackLeftEvent)
+
+    def test_alt_track_right_in_loop_mode(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        events = main.parse_events(
+            msg('control_change', control=main.CC_TRACK_RIGHT_ALT, value=127), state
+        )
+        self.assertEqual(len(events), 1)
+        self.assertIsInstance(events[0], main.LoopModeTrackRightEvent)
+
+    def test_alt_track_left_in_loop_mode(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        events = main.parse_events(
+            msg('control_change', control=main.CC_TRACK_LEFT_ALT, value=127), state
+        )
+        self.assertEqual(len(events), 1)
+        self.assertIsInstance(events[0], main.LoopModeTrackLeftEvent)
+
+    def test_track_right_release_ignored(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        events = main.parse_events(
+            msg('control_change', channel=0, control=main.CC_TRACK_RIGHT, value=0), state
+        )
+        self.assertFalse(any(isinstance(e, main.LoopModeTrackRightEvent) for e in events))
+
+    def test_track_right_outside_loop_mode_is_passthrough_cc(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = False
+        events = main.parse_events(
+            msg('control_change', channel=0, control=main.CC_TRACK_RIGHT, value=127), state
+        )
+        self.assertTrue(any(isinstance(e, main.CCEvent) for e in events))
+        self.assertFalse(any(isinstance(e, main.LoopModeTrackRightEvent) for e in events))
+
+    def test_pad_select_bare_tap_in_loop_mode_emits_record_toggle(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        with contextlib.redirect_stdout(io.StringIO()):
+            # Press PadSelect (CC 104)
+            main.parse_events(msg('control_change', control=main.CC_PAD_SELECT, value=127, channel=0), state)
+            # Release without pressing any digit pad
+            events = main.parse_events(msg('control_change', control=main.CC_PAD_SELECT, value=0, channel=0), state)
+        self.assertEqual(len(events), 1)
+        self.assertIsInstance(events[0], main.LoopModeRecordToggleEvent)
+
+    def test_pad_select_with_digit_in_loop_mode_emits_percussion_change(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        with contextlib.redirect_stdout(io.StringIO()):
+            main.parse_events(msg('control_change', control=main.CC_PAD_SELECT, value=127, channel=0), state)
+            main.parse_events(msg('note_on', note=40, velocity=127, channel=state['ch_pads']), state)
+            events = main.parse_events(msg('control_change', control=main.CC_PAD_SELECT, value=0, channel=0), state)
+        self.assertTrue(any(isinstance(e, main.PercussionChangeEvent) for e in events))
+        self.assertFalse(any(isinstance(e, main.LoopModeRecordToggleEvent) for e in events))
+
+    def test_key_select_bare_tap_in_loop_mode_emits_playback_toggle(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        with contextlib.redirect_stdout(io.StringIO()):
+            main.parse_events(msg('control_change', control=main.CC_KEY_SELECT, value=127, channel=0), state)
+            # Release without pressing any pad at all
+            events = main.parse_events(msg('control_change', control=main.CC_KEY_SELECT, value=0, channel=0), state)
+        self.assertEqual(len(events), 1)
+        self.assertIsInstance(events[0], main.LoopModePlaybackToggleEvent)
+
+    def test_loop_record_button_in_loop_mode_emits_record_toggle(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        events = main.parse_events(
+            msg('control_change', control=main.CC_LOOP_RECORD, value=127, channel=0), state
+        )
+        self.assertEqual(len(events), 1)
+        self.assertIsInstance(events[0], main.LoopModeRecordToggleEvent)
+
+    def test_loop_record_button_release_ignored_in_loop_mode(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        events = main.parse_events(
+            msg('control_change', control=main.CC_LOOP_RECORD, value=0, channel=0), state
+        )
+        self.assertEqual(events, [])
+
+    def test_loop_playback_button_in_loop_mode_emits_playback_toggle(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        events = main.parse_events(
+            msg('control_change', control=main.CC_LOOP_PLAYBACK, value=127, channel=0), state
+        )
+        self.assertEqual(len(events), 1)
+        self.assertIsInstance(events[0], main.LoopModePlaybackToggleEvent)
+
+    def test_loop_playback_button_release_ignored_in_loop_mode(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        events = main.parse_events(
+            msg('control_change', control=main.CC_LOOP_PLAYBACK, value=0, channel=0), state
+        )
+        self.assertEqual(events, [])
+
+    def test_key_select_with_digits_in_loop_mode_emits_program_change(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        with contextlib.redirect_stdout(io.StringIO()):
+            main.parse_events(msg('control_change', control=main.CC_KEY_SELECT, value=127, channel=0), state)
+            main.parse_events(msg('note_on', note=40, velocity=127, channel=state['ch_pads']), state)  # digit 1
+            events = main.parse_events(msg('control_change', control=main.CC_KEY_SELECT, value=0, channel=0), state)
+        self.assertTrue(any(isinstance(e, main.ProgramChangeEvent) for e in events))
+        self.assertFalse(any(isinstance(e, main.LoopModePlaybackToggleEvent) for e in events))
+
+    def test_note_on_buffered_during_recording_and_still_plays(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        state['loop_mode_recording'] = True
+        state['loop_mode_record_start'] = time.time()
+
+        events = main.parse_events(
+            msg('note_on', note=60, velocity=100, channel=state['ch_keys']), state
+        )
+
+        # NoteOnEvent still emitted
+        self.assertTrue(any(isinstance(e, main.NoteOnEvent) for e in events))
+        # Event buffered
+        self.assertEqual(len(state['loop_mode_record_buffer']), 1)
+        buf_entry = state['loop_mode_record_buffer'][0]
+        self.assertEqual(buf_entry[1], 'note_on')
+        self.assertEqual(buf_entry[2], state['ch_keys'])
+        self.assertEqual(buf_entry[3], 60)
+        self.assertEqual(buf_entry[4], 100)
+
+    def test_note_off_buffered_during_recording(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        state['loop_mode_recording'] = True
+        state['loop_mode_record_start'] = time.time()
+
+        events = main.parse_events(
+            msg('note_off', note=60, channel=state['ch_keys']), state
+        )
+
+        self.assertTrue(any(isinstance(e, main.NoteOffEvent) for e in events))
+        self.assertEqual(len(state['loop_mode_record_buffer']), 1)
+        buf_entry = state['loop_mode_record_buffer'][0]
+        self.assertEqual(buf_entry[1], 'note_off')
+        self.assertEqual(buf_entry[2], state['ch_keys'])
+        self.assertEqual(buf_entry[3], 60)
+
+    def test_note_on_buffered_when_input_channel_differs_from_configured_keys_channel(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        state['loop_mode_recording'] = True
+        state['loop_mode_record_start'] = time.time()
+
+        events = main.parse_events(
+            msg('note_on', note=60, velocity=100, channel=1), state
+        )
+
+        note_event = next(e for e in events if isinstance(e, main.NoteOnEvent))
+        self.assertEqual(note_event.channel, 1)
+        self.assertEqual(len(state['loop_mode_record_buffer']), 1)
+        self.assertEqual(state['loop_mode_record_buffer'][0][1], 'note_on')
+        self.assertEqual(state['loop_mode_record_buffer'][0][2], 1)
+
+    def test_note_off_buffered_when_input_channel_differs_from_configured_keys_channel(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        state['loop_mode_recording'] = True
+        state['loop_mode_record_start'] = time.time()
+
+        events = main.parse_events(
+            msg('note_off', note=60, channel=1), state
+        )
+
+        note_event = next(e for e in events if isinstance(e, main.NoteOffEvent))
+        self.assertEqual(note_event.channel, 1)
+        self.assertEqual(len(state['loop_mode_record_buffer']), 1)
+        self.assertEqual(state['loop_mode_record_buffer'][0][1], 'note_off')
+        self.assertEqual(state['loop_mode_record_buffer'][0][2], 1)
+
+    def test_note_on_buffered_uses_normalized_velocity(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        state['loop_mode_recording'] = True
+        state['loop_mode_record_start'] = time.time()
+        state['enable_key_velocity'] = False
+
+        events = main.parse_events(
+            msg('note_on', note=60, velocity=27, channel=state['ch_keys']), state
+        )
+
+        note_event = next(e for e in events if isinstance(e, main.NoteOnEvent))
+        self.assertEqual(note_event.velocity, 100)
+        self.assertEqual(state['loop_mode_record_buffer'][0][4], 100)
+
+    def test_note_on_buffered_uses_rerouted_channel(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        state['loop_mode_recording'] = True
+        state['loop_mode_record_start'] = time.time()
+        state['current_keys_channel'] = 2
+
+        events = main.parse_events(
+            msg('note_on', note=60, velocity=100, channel=state['ch_keys']), state
+        )
+
+        note_event = next(e for e in events if isinstance(e, main.NoteOnEvent))
+        self.assertEqual(note_event.channel, 2)
+        self.assertEqual(state['loop_mode_record_buffer'][0][2], 2)
+
+    def test_pad_notes_also_buffered_during_recording(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        state['loop_mode_recording'] = True
+        state['loop_mode_record_start'] = time.time()
+
+        main.parse_events(
+            msg('note_on', note=36, velocity=100, channel=state['ch_pads']), state
+        )
+
+        self.assertEqual(len(state['loop_mode_record_buffer']), 1)
+        self.assertEqual(state['loop_mode_record_buffer'][0][2], state['ch_pads'])
+
+    def test_notes_not_buffered_when_not_recording(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        state['loop_mode_recording'] = False
+
+        main.parse_events(
+            msg('note_on', note=60, velocity=100, channel=state['ch_keys']), state
+        )
+
+        self.assertEqual(state['loop_mode_record_buffer'], [])
+
+
+class LoopModeHandleEventTests(unittest.TestCase):
+    def _make_fake_synth(self):
+        class FakeSynth:
+            def noteon(self, *a): pass
+            def noteoff(self, *a): pass
+            def program_select(self, *a): return 0
+            def cc(self, *a): pass
+        return FakeSynth()
+
+    def _call_handle(self, event, state):
+        with contextlib.redirect_stdout(io.StringIO()):
+            main.handle_event(
+                event,
+                fs=self._make_fake_synth(),
+                ch_keys=0, ch_pads=9, sfid=1,
+                state=state,
+            )
+
+    def test_enter_loop_mode_sets_active_and_clears_state(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        # Simulate prior loop state that should be cleaned up
+        state['loop_mode_tracks'][0] = object()
+        state['loop_mode_current_track'] = 2
+        state['loop_mode_recording'] = True
+        state['loop_mode_playing'] = True
+
+        spoken = []
+        original_speak = main.speak
+        main.speak = lambda text, wait=False: spoken.append(text)
+        try:
+            self._call_handle(main.EnterLoopModeEvent(), state)
+        finally:
+            main.speak = original_speak
+
+        self.assertTrue(state['loop_mode_active'])
+        self.assertTrue(all(t is None for t in state['loop_mode_tracks']))
+        self.assertEqual(state['loop_mode_current_track'], 0)
+        self.assertFalse(state['loop_mode_recording'])
+        self.assertEqual(state['loop_mode_record_buffer'], [])
+        self.assertFalse(state['loop_mode_playing'])
+        self.assertIn('Loop Mode', spoken[0])
+
+    def test_exit_loop_mode_clears_active_and_stops_playback(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        state['loop_mode_playing'] = True
+        stop_ev = threading.Event()
+        state['loop_mode_play_stop_events'][0] = stop_ev
+
+        spoken = []
+        original_speak = main.speak
+        main.speak = lambda text, wait=False: spoken.append(text)
+        try:
+            self._call_handle(main.ExitLoopModeEvent(), state)
+        finally:
+            main.speak = original_speak
+
+        self.assertFalse(state['loop_mode_active'])
+        self.assertFalse(state['loop_mode_playing'])
+        self.assertTrue(stop_ev.is_set())
+        self.assertIn('Goodbye', spoken[0])
+
+    def test_enter_loop_mode_stops_existing_playback_threads(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        state['loop_mode_playing'] = True
+        stop_ev0 = threading.Event()
+        stop_ev1 = threading.Event()
+        state['loop_mode_play_stop_events'][0] = stop_ev0
+        state['loop_mode_play_stop_events'][1] = stop_ev1
+
+        original_speak = main.speak
+        main.speak = lambda text, wait=False: None
+        try:
+            self._call_handle(main.EnterLoopModeEvent(), state)
+        finally:
+            main.speak = original_speak
+
+        self.assertTrue(stop_ev0.is_set())
+        self.assertTrue(stop_ev1.is_set())
+
+    def test_track_right_advances_track(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        state['loop_mode_current_track'] = 0
+        self._call_handle(main.LoopModeTrackRightEvent(), state)
+        self.assertEqual(state['loop_mode_current_track'], 1)
+
+    def test_track_right_wraps_at_end(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        state['loop_mode_current_track'] = 3  # last track (0-indexed, n=4)
+        self._call_handle(main.LoopModeTrackRightEvent(), state)
+        self.assertEqual(state['loop_mode_current_track'], 0)
+
+    def test_track_left_decrements_track(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        state['loop_mode_current_track'] = 2
+        self._call_handle(main.LoopModeTrackLeftEvent(), state)
+        self.assertEqual(state['loop_mode_current_track'], 1)
+
+    def test_track_left_wraps_at_start(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        state['loop_mode_current_track'] = 0
+        self._call_handle(main.LoopModeTrackLeftEvent(), state)
+        self.assertEqual(state['loop_mode_current_track'], 3)
+
+    def test_record_toggle_starts_recording(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        state['loop_mode_recording'] = False
+        self._call_handle(main.LoopModeRecordToggleEvent(), state)
+        self.assertTrue(state['loop_mode_recording'])
+        self.assertEqual(state['loop_mode_record_buffer'], [])
+        self.assertGreater(state['loop_mode_record_start'], 0.0)
+
+    def test_first_saved_track_sets_length_reference(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        state['loop_mode_recording'] = True
+        state['loop_mode_record_start'] = time.time() - 1.0
+        state['loop_mode_record_buffer'] = [
+            (0.0, 'note_on', 0, 60, 100),
+            (0.25, 'note_off', 0, 60, 0),
+            (0.5, 'note_on', 0, 62, 100),
+            (0.75, 'note_off', 0, 62, 0),
+        ]
+
+        self._call_handle(main.LoopModeRecordToggleEvent(), state)
+
+        self.assertIsNotNone(state['loop_mode_reference_duration'])
+        self.assertAlmostEqual(
+            state['loop_mode_reference_duration'],
+            state['loop_mode_tracks'][0].duration,
+            places=2,
+        )
+        self.assertIsNotNone(state['loop_mode_reference_subdivision'])
+
+    def test_first_saved_track_quantizes_rough_beats(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        state['loop_mode_recording'] = True
+        state['loop_mode_record_start'] = time.time() - 4.0
+        state['loop_mode_record_buffer'] = [
+            (0.03, 'note_on', 0, 60, 100),
+            (0.24, 'note_off', 0, 60, 0),
+            (1.07, 'note_on', 0, 62, 100),
+            (1.26, 'note_off', 0, 62, 0),
+            (2.02, 'note_on', 0, 64, 100),
+            (2.29, 'note_off', 0, 64, 0),
+            (2.94, 'note_on', 0, 65, 100),
+            (3.21, 'note_off', 0, 65, 0),
+        ]
+
+        self._call_handle(main.LoopModeRecordToggleEvent(), state)
+
+        track = state['loop_mode_tracks'][0]
+        step = track.duration / 4
+        self.assertEqual(
+            [round(offset / step) for offset, event_type, *_ in track.events if event_type == 'note_on'],
+            [0, 1, 2, 3],
+        )
+
+    def test_record_toggle_stops_recording_and_saves_track_with_events(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        state['loop_mode_recording'] = True
+        state['loop_mode_record_start'] = time.time() - 1.0  # 1 second ago
+        state['loop_mode_record_buffer'] = [
+            (0.0,  'note_on',  0, 60, 100),
+            (0.5,  'note_off', 0, 60, 0),
+        ]
+        self._call_handle(main.LoopModeRecordToggleEvent(), state)
+        self.assertFalse(state['loop_mode_recording'])
+        track = state['loop_mode_tracks'][0]
+        self.assertIsNotNone(track)
+        self.assertEqual(len(track.events), 2)
+        self.assertGreater(track.duration, 0.9)
+        self.assertEqual(track.events[0][0], 0.0)
+
+    def test_record_toggle_trims_leading_silence_from_saved_track(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        state['loop_mode_recording'] = True
+        state['loop_mode_record_start'] = time.time() - 2.0
+        state['loop_mode_record_buffer'] = [
+            (1.0, 'note_on', 0, 60, 100),
+            (1.4, 'note_off', 0, 60, 0),
+        ]
+        self._call_handle(main.LoopModeRecordToggleEvent(), state)
+        track = state['loop_mode_tracks'][0]
+        self.assertEqual(track.events[0][0], 0.0)
+        self.assertAlmostEqual(track.events[1][0], 0.4, places=1)
+        self.assertGreater(track.duration, 0.9)
+        self.assertLess(track.duration, 1.2)
+
+    def test_record_toggle_auto_fits_duration_to_reference_multiple(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        state['loop_mode_current_track'] = 1
+        state['loop_mode_reference_duration'] = 1.0
+        state['loop_mode_reference_subdivision'] = 4
+        state['loop_mode_recording'] = True
+        state['loop_mode_record_start'] = time.time() - 2.49
+        state['loop_mode_record_buffer'] = [
+            (0.49, 'note_on', 0, 60, 100),
+            (0.77, 'note_off', 0, 60, 0),
+            (1.52, 'note_on', 0, 62, 100),
+            (1.76, 'note_off', 0, 62, 0),
+        ]
+
+        self._call_handle(main.LoopModeRecordToggleEvent(), state)
+
+        track = state['loop_mode_tracks'][1]
+        self.assertAlmostEqual(track.duration, 2.0, places=2)
+        note_on_offsets = [
+            offset for offset, event_type, *_ in track.events if event_type == 'note_on'
+        ]
+        self.assertAlmostEqual(note_on_offsets[0], 0.0, places=2)
+        self.assertAlmostEqual(note_on_offsets[1], 1.0, places=2)
+        self.assertEqual(state['loop_mode_reference_duration'], 1.0)
+
+    def test_record_toggle_leaves_duration_when_far_from_reference_multiple(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        state['loop_mode_current_track'] = 1
+        state['loop_mode_reference_duration'] = 1.0
+        state['loop_mode_recording'] = True
+        state['loop_mode_record_start'] = time.time() - 1.6
+        state['loop_mode_record_buffer'] = [
+            (0.0, 'note_on', 0, 60, 100),
+            (1.6, 'note_off', 0, 60, 0),
+        ]
+
+        self._call_handle(main.LoopModeRecordToggleEvent(), state)
+
+        track = state['loop_mode_tracks'][1]
+        self.assertGreater(track.duration, 1.5)
+        self.assertLess(track.duration, 1.7)
+
+    def test_record_toggle_stops_recording_clears_track_on_empty_buffer(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        state['loop_mode_recording'] = True
+        state['loop_mode_record_start'] = time.time()
+        state['loop_mode_record_buffer'] = []
+        state['loop_mode_tracks'][0] = object()  # existing content
+        self._call_handle(main.LoopModeRecordToggleEvent(), state)
+        self.assertFalse(state['loop_mode_recording'])
+        self.assertIsNone(state['loop_mode_tracks'][0])
+
+    def test_record_toggle_stops_current_track_playback(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        state['loop_mode_recording'] = False
+        state['loop_mode_playing'] = True
+        stop_ev = threading.Event()
+        state['loop_mode_play_stop_events'][0] = stop_ev
+        self._call_handle(main.LoopModeRecordToggleEvent(), state)
+        self.assertTrue(stop_ev.is_set())
+        self.assertIsNone(state['loop_mode_play_stop_events'][0])
+
+    def test_record_toggle_restarts_track_playback_if_playing_and_track_has_content(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        state['loop_mode_recording'] = True
+        state['loop_mode_record_start'] = time.time() - 1.0
+        state['loop_mode_record_buffer'] = [
+            (0.0, 'note_on', 0, 60, 100),
+            (0.5, 'note_off', 0, 60, 0),
+        ]
+        state['loop_mode_playing'] = True  # global playback is ON
+
+        threads_started = []
+        original_thread = main.threading.Thread
+
+        class FakeThread:
+            def __init__(self, target=None, args=(), daemon=False):
+                self.target = target
+                self.daemon = daemon
+                threads_started.append(self)
+
+            def start(self):
+                pass
+
+        main.threading.Thread = FakeThread
+        try:
+            self._call_handle(main.LoopModeRecordToggleEvent(), state)
+        finally:
+            main.threading.Thread = original_thread
+
+        self.assertTrue(len(threads_started) > 0)
+        self.assertIsNotNone(state['loop_mode_play_stop_events'][0])
+
+    def test_playback_toggle_starts_playback_for_tracks_with_content(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        state['loop_mode_playing'] = False
+        state['loop_mode_tracks'][0] = loop_mode_module.LoopTrack(
+            events=[(0.0, 'note_on', 0, 60, 100)],
+            duration=1.0,
+        )
+        state['loop_mode_tracks'][1] = None
+
+        threads_started = []
+        original_thread = main.threading.Thread
+
+        class FakeThread:
+            def __init__(self, target=None, args=(), daemon=False):
+                self.target = target
+                self.daemon = daemon
+                threads_started.append(self)
+
+            def start(self):
+                pass
+
+        main.threading.Thread = FakeThread
+        try:
+            self._call_handle(main.LoopModePlaybackToggleEvent(), state)
+        finally:
+            main.threading.Thread = original_thread
+
+        self.assertTrue(state['loop_mode_playing'])
+        self.assertEqual(len(threads_started), 1)
+        self.assertIsNotNone(state['loop_mode_play_stop_events'][0])
+        self.assertIsNone(state['loop_mode_play_stop_events'][1])
+
+    def test_playback_toggle_stops_all_tracks(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        state['loop_mode_playing'] = True
+        stop_ev0 = threading.Event()
+        stop_ev1 = threading.Event()
+        state['loop_mode_play_stop_events'][0] = stop_ev0
+        state['loop_mode_play_stop_events'][1] = stop_ev1
+        self._call_handle(main.LoopModePlaybackToggleEvent(), state)
+        self.assertFalse(state['loop_mode_playing'])
+        self.assertTrue(stop_ev0.is_set())
+        self.assertTrue(stop_ev1.is_set())
+        self.assertTrue(all(e is None for e in state['loop_mode_play_stop_events']))
 
 
 if __name__ == '__main__':

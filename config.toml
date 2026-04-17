@@ -36,3 +36,10 @@ bingo_sound = "assets/freesound_community-078834_child39s-xylophone-2-88465.mp3"
 entry_pads     = "16,2"      # KeySelect pad sequence to enter/exit the mode
 chord_set      = "extended"  # "minimal", "core_set", or "extended"
 announce_delay = 0.2         # seconds to wait after the last note change before speaking
+
+# -----------------------------------------------------------------------------
+# Loop Mode settings
+# -----------------------------------------------------------------------------
+[loop_mode]
+entry_pads = "16,3"  # KeySelect pad sequence to enter/exit the mode
+n_tracks   = 4       # number of independent loop tracks
