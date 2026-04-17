@@ -270,6 +270,7 @@ def make_input_state(ch_keys, ch_pads, n_notes=4):
         'loop_mode_record_start': 0.0,
         'loop_mode_record_buffer': [],
         'loop_mode_reference_duration': None,
+        'loop_mode_reference_subdivision': None,
         'loop_mode_playing': False,
         'loop_mode_play_stop_events': [None] * 4,
     }
@@ -694,6 +695,7 @@ def handle_event(event, fs, ch_keys, ch_pads, sfid, state):
         state['loop_mode_recording'] = False
         state['loop_mode_record_buffer'] = []
         state['loop_mode_reference_duration'] = None
+        state['loop_mode_reference_subdivision'] = None
         state['loop_mode_playing'] = False
         state['loop_mode_play_stop_events'] = [None] * n
         print("Loop Mode: active")
@@ -706,6 +708,7 @@ def handle_event(event, fs, ch_keys, ch_pads, sfid, state):
         state['loop_mode_playing'] = False
         state['loop_mode_recording'] = False
         state['loop_mode_reference_duration'] = None
+        state['loop_mode_reference_subdivision'] = None
         state['loop_mode_play_stop_events'] = [None] * state['loop_mode_n_tracks']
         print("Loop Mode: exited")
         speak("Goodbye")
@@ -752,13 +755,23 @@ def handle_event(event, fs, ch_keys, ch_pads, sfid, state):
                 if reference_duration is None:
                     track, quantize_info = loop_mode.quantize_first_track(track)
                     state['loop_mode_reference_duration'] = track.duration
+                    state['loop_mode_reference_subdivision'] = (
+                        quantize_info['subdivision'] if quantize_info is not None else None
+                    )
                 else:
                     track, fit_info = loop_mode.fit_track_to_reference(track, reference_duration)
+                    reference_subdivision = state.get('loop_mode_reference_subdivision')
+                    if fit_info is not None and reference_subdivision:
+                        grid_step = reference_duration / reference_subdivision
+                        track, quantize_info = loop_mode.quantize_track_to_step(track, grid_step)
                 state['loop_mode_tracks'][idx] = track
                 if quantize_info is not None:
+                    denominator = quantize_info.get('subdivision')
+                    if denominator is None and fit_info is not None and state.get('loop_mode_reference_subdivision'):
+                        denominator = state['loop_mode_reference_subdivision'] * fit_info['multiple']
                     print(
                         "Loop Mode: "
-                        f"track {idx + 1} timing aligned to 1/{quantize_info['subdivision']} of loop length"
+                        f"track {idx + 1} timing aligned to 1/{denominator} of loop length"
                     )
                 if fit_info is not None and abs(fit_info['source_duration'] - fit_info['target_duration']) > 1e-6:
                     print(
@@ -771,6 +784,7 @@ def handle_event(event, fs, ch_keys, ch_pads, sfid, state):
                 state['loop_mode_tracks'][idx] = None
                 if all(track is None for track in state['loop_mode_tracks']):
                     state['loop_mode_reference_duration'] = None
+                    state['loop_mode_reference_subdivision'] = None
                 print(f"Loop Mode: track {idx + 1} cleared")
             # If global playback is on and track has content, restart playback for this track
             if state['loop_mode_playing'] and state['loop_mode_tracks'][idx] is not None:

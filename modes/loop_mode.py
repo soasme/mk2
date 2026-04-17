@@ -18,6 +18,52 @@ class LoopTrack:
     duration: float  # total loop duration in seconds
 
 
+def quantize_track_to_step(track,
+                           step,
+                           tolerance=FIRST_TRACK_QUANTIZE_TOLERANCE,
+                           decision_event_types=('note_on',)):
+    """Quantize a track to a known step size if the rhythmic events fit it."""
+    if track.duration <= 0 or not track.events or step <= 0:
+        return track, None
+
+    decision_offsets = [
+        time_offset
+        for time_offset, event_type, *_ in track.events
+        if event_type in decision_event_types
+    ]
+    if not decision_offsets:
+        return track, None
+
+    max_error = 0.0
+    quantized_events = []
+    for index, (time_offset, event_type, channel, note, velocity) in enumerate(track.events):
+        snapped = round(time_offset / step) * step
+        snapped = min(track.duration, max(0.0, snapped))
+        if event_type in decision_event_types:
+            max_error = max(max_error, abs(time_offset - snapped))
+        quantized_events.append((snapped, event_type, channel, note, velocity, index))
+
+    if max_error > tolerance * step:
+        return track, None
+
+    quantized_events.sort(
+        key=lambda event: (
+            event[0],
+            0 if event[1] == 'note_off' else 1,
+            event[5],
+        )
+    )
+    quantized_track = LoopTrack(
+        events=[(offset, event_type, channel, note, velocity)
+                for offset, event_type, channel, note, velocity, _ in quantized_events],
+        duration=track.duration,
+    )
+    return quantized_track, {
+        'step': step,
+        'max_error': max_error,
+    }
+
+
 def fit_track_to_reference(track, reference_duration, tolerance=AUTO_FIT_TOLERANCE):
     """Snap a track to the nearest integer multiple of the reference length.
 
@@ -90,29 +136,13 @@ def quantize_first_track(track,
         return track, None
 
     step = track.duration / chosen
-    quantized_events = []
-    for index, (time_offset, event_type, channel, note, velocity) in enumerate(track.events):
-        snapped = round(time_offset / step) * step
-        snapped = min(track.duration, max(0.0, snapped))
-        quantized_events.append((snapped, event_type, channel, note, velocity, index))
-
-    # Stable ordering matters when multiple events collapse onto the same beat.
-    quantized_events.sort(
-        key=lambda event: (
-            event[0],
-            0 if event[1] == 'note_off' else 1,
-            event[5],
-        )
-    )
-    quantized_track = LoopTrack(
-        events=[(offset, event_type, channel, note, velocity)
-                for offset, event_type, channel, note, velocity, _ in quantized_events],
-        duration=track.duration,
-    )
+    quantized_track, quantize_info = quantize_track_to_step(track, step, tolerance=tolerance)
+    if quantize_info is None:
+        return track, None
     return quantized_track, {
         'subdivision': chosen,
-        'max_error': chosen_max_error,
-        'step': step,
+        'max_error': quantize_info['max_error'],
+        'step': quantize_info['step'],
     }
 
 

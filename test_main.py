@@ -469,6 +469,39 @@ class LoopModeTests(unittest.TestCase):
         self.assertEqual(track.events, [])
         self.assertEqual(track.duration, 0.0)
 
+    def test_quantize_track_to_step_snaps_to_known_grid(self):
+        track = loop_mode_module.LoopTrack(
+            events=[
+                (0.48, 'note_on', 0, 60, 100),
+                (0.77, 'note_off', 0, 60, 0),
+                (1.52, 'note_on', 0, 62, 100),
+                (1.77, 'note_off', 0, 62, 0),
+            ],
+            duration=2.0,
+        )
+
+        quantized, info = loop_mode_module.quantize_track_to_step(track, step=0.5)
+
+        self.assertAlmostEqual(quantized.events[0][0], 0.5, places=2)
+        self.assertAlmostEqual(quantized.events[2][0], 1.5, places=2)
+        self.assertIsNotNone(info)
+
+    def test_quantize_track_to_step_leaves_far_events_unchanged(self):
+        track = loop_mode_module.LoopTrack(
+            events=[
+                (0.28, 'note_on', 0, 60, 100),
+                (0.77, 'note_off', 0, 60, 0),
+                (1.34, 'note_on', 0, 62, 100),
+                (1.77, 'note_off', 0, 62, 0),
+            ],
+            duration=2.0,
+        )
+
+        quantized, info = loop_mode_module.quantize_track_to_step(track, step=0.5)
+
+        self.assertIs(quantized, track)
+        self.assertIsNone(info)
+
     def test_quantize_first_track_snaps_to_quarter_grid(self):
         track = loop_mode_module.LoopTrack(
             events=[
@@ -629,6 +662,7 @@ class LoopModeParseEventsTests(unittest.TestCase):
         self.assertEqual(state['loop_mode_record_start'], 0.0)
         self.assertEqual(state['loop_mode_record_buffer'], [])
         self.assertIsNone(state['loop_mode_reference_duration'])
+        self.assertIsNone(state['loop_mode_reference_subdivision'])
         self.assertFalse(state['loop_mode_playing'])
         self.assertEqual(len(state['loop_mode_play_stop_events']), 4)
         self.assertTrue(all(e is None for e in state['loop_mode_play_stop_events']))
@@ -1051,7 +1085,9 @@ class LoopModeHandleEventTests(unittest.TestCase):
         state['loop_mode_record_start'] = time.time() - 1.0
         state['loop_mode_record_buffer'] = [
             (0.0, 'note_on', 0, 60, 100),
-            (0.5, 'note_off', 0, 60, 0),
+            (0.25, 'note_off', 0, 60, 0),
+            (0.5, 'note_on', 0, 62, 100),
+            (0.75, 'note_off', 0, 62, 0),
         ]
 
         self._call_handle(main.LoopModeRecordToggleEvent(), state)
@@ -1062,6 +1098,7 @@ class LoopModeHandleEventTests(unittest.TestCase):
             state['loop_mode_tracks'][0].duration,
             places=2,
         )
+        self.assertIsNotNone(state['loop_mode_reference_subdivision'])
 
     def test_first_saved_track_quantizes_rough_beats(self):
         state = main.make_input_state(ch_keys=0, ch_pads=9)
@@ -1126,18 +1163,25 @@ class LoopModeHandleEventTests(unittest.TestCase):
         state['loop_mode_active'] = True
         state['loop_mode_current_track'] = 1
         state['loop_mode_reference_duration'] = 1.0
+        state['loop_mode_reference_subdivision'] = 4
         state['loop_mode_recording'] = True
-        state['loop_mode_record_start'] = time.time() - 1.9
+        state['loop_mode_record_start'] = time.time() - 2.49
         state['loop_mode_record_buffer'] = [
-            (0.0, 'note_on', 0, 60, 100),
-            (1.9, 'note_off', 0, 60, 0),
+            (0.49, 'note_on', 0, 60, 100),
+            (0.77, 'note_off', 0, 60, 0),
+            (1.52, 'note_on', 0, 62, 100),
+            (1.76, 'note_off', 0, 62, 0),
         ]
 
         self._call_handle(main.LoopModeRecordToggleEvent(), state)
 
         track = state['loop_mode_tracks'][1]
         self.assertAlmostEqual(track.duration, 2.0, places=2)
-        self.assertAlmostEqual(track.events[-1][0], 2.0, places=2)
+        note_on_offsets = [
+            offset for offset, event_type, *_ in track.events if event_type == 'note_on'
+        ]
+        self.assertAlmostEqual(note_on_offsets[0], 0.0, places=2)
+        self.assertAlmostEqual(note_on_offsets[1], 1.0, places=2)
         self.assertEqual(state['loop_mode_reference_duration'], 1.0)
 
     def test_record_toggle_leaves_duration_when_far_from_reference_multiple(self):
