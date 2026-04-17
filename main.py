@@ -79,8 +79,8 @@ CC_PAD_SELECT     = 104   # Scene Up (upper round pad)
 CC_KEY_SELECT     = 105   # Scene Down (lower round pad)
 CC_TRACK_LEFT     = 103   # Track Left (left arrow button)
 CC_TRACK_RIGHT    = 102   # Track Right (right arrow button)
-CC_TRACK_LEFT_ALT = 107   # Alternate Track Left mapping seen on some devices
-CC_TRACK_RIGHT_ALT = 106  # Alternate Track Right mapping seen on some devices
+CC_TRACK_LEFT_ALT = 106   # Alternate Track Left mapping seen on some devices
+CC_TRACK_RIGHT_ALT = 107  # Alternate Track Right mapping seen on some devices
 CC_LOOP_RECORD    = 108   # Play Button 1 transport button
 CC_LOOP_PLAYBACK  = 109   # Play Button 2 transport button
 CC_CHANNEL_SELECT = None  # TODO: discover with DEBUG=1 — hold button + press pads 1-9 to pick channel

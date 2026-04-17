@@ -546,8 +546,8 @@ class LoopModeParseEventsTests(unittest.TestCase):
     def test_cc_track_constants(self):
         self.assertEqual(main.CC_TRACK_LEFT, 103)
         self.assertEqual(main.CC_TRACK_RIGHT, 102)
-        self.assertEqual(main.CC_TRACK_LEFT_ALT, 107)
-        self.assertEqual(main.CC_TRACK_RIGHT_ALT, 106)
+        self.assertEqual(main.CC_TRACK_LEFT_ALT, 106)
+        self.assertEqual(main.CC_TRACK_RIGHT_ALT, 107)
 
     def test_enter_loop_mode(self):
         state = main.make_input_state(ch_keys=0, ch_pads=9)
