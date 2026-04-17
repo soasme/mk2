@@ -77,8 +77,8 @@ CONFIG_PATH = pathlib.Path(__file__).parent / 'config.toml'
 
 CC_PAD_SELECT     = 104   # Scene Up (upper round pad)
 CC_KEY_SELECT     = 105   # Scene Down (lower round pad)
-CC_TRACK_LEFT     = 103
-CC_TRACK_RIGHT    = 102
+CC_TRACK_LEFT     = 103   # Track Left (left arrow button)
+CC_TRACK_RIGHT    = 102   # Track Right (right arrow button)
 CC_CHANNEL_SELECT = None  # TODO: discover with DEBUG=1 — hold button + press pads 1-9 to pick channel
 
 # Basic-mode note numbers for pads 1-10, mapped to digit (pad 10 → 0)

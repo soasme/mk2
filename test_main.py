@@ -533,6 +533,7 @@ class LoopModeParseEventsTests(unittest.TestCase):
         self.assertTrue(all(t is None for t in state['loop_mode_tracks']))
         self.assertEqual(state['loop_mode_current_track'], 0)
         self.assertFalse(state['loop_mode_recording'])
+        self.assertEqual(state['loop_mode_record_start'], 0.0)
         self.assertEqual(state['loop_mode_record_buffer'], [])
         self.assertFalse(state['loop_mode_playing'])
         self.assertEqual(len(state['loop_mode_play_stop_events']), 4)
