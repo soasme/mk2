@@ -486,6 +486,20 @@ class LoopModeTests(unittest.TestCase):
         self.assertAlmostEqual(quantized.events[2][0], 1.5, places=2)
         self.assertIsNotNone(info)
 
+    def test_quantize_track_to_step_preserves_note_lengths(self):
+        track = loop_mode_module.LoopTrack(
+            events=[
+                (0.48, 'note_on', 0, 60, 100),
+                (0.77, 'note_off', 0, 60, 0),
+            ],
+            duration=2.0,
+        )
+
+        quantized, _ = loop_mode_module.quantize_track_to_step(track, step=0.5)
+
+        self.assertAlmostEqual(quantized.events[0][0], 0.5, places=2)
+        self.assertAlmostEqual(quantized.events[1][0], 0.79, places=2)
+
     def test_quantize_track_to_step_leaves_far_events_unchanged(self):
         track = loop_mode_module.LoopTrack(
             events=[
@@ -524,6 +538,44 @@ class LoopModeTests(unittest.TestCase):
             [offset for offset, event_type, *_ in quantized.events if event_type == 'note_on'],
             [0.0, 1.0, 2.0, 3.0],
         )
+
+    def test_quantize_first_track_clusters_strummed_chords(self):
+        track = loop_mode_module.LoopTrack(
+            events=[
+                (0.00, 'note_on', 1, 48, 100),
+                (0.03, 'note_on', 1, 55, 100),
+                (0.06, 'note_on', 1, 52, 100),
+                (0.22, 'note_off', 1, 52, 0),
+                (0.24, 'note_off', 1, 55, 0),
+                (0.26, 'note_off', 1, 48, 0),
+                (1.02, 'note_on', 1, 48, 100),
+                (1.05, 'note_on', 1, 55, 100),
+                (1.08, 'note_on', 1, 52, 100),
+                (1.22, 'note_off', 1, 52, 0),
+                (1.24, 'note_off', 1, 55, 0),
+                (1.26, 'note_off', 1, 48, 0),
+                (2.04, 'note_on', 1, 48, 100),
+                (2.07, 'note_on', 1, 55, 100),
+                (2.10, 'note_on', 1, 52, 100),
+                (2.22, 'note_off', 1, 52, 0),
+                (2.24, 'note_off', 1, 55, 0),
+                (2.26, 'note_off', 1, 48, 0),
+                (2.96, 'note_on', 1, 48, 100),
+                (2.99, 'note_on', 1, 52, 100),
+                (3.02, 'note_on', 1, 55, 100),
+                (3.22, 'note_off', 1, 52, 0),
+                (3.24, 'note_off', 1, 55, 0),
+                (3.26, 'note_off', 1, 48, 0),
+            ],
+            duration=4.0,
+        )
+
+        quantized, info = loop_mode_module.quantize_first_track(track)
+
+        self.assertEqual(info['subdivision'], 4)
+        note_on_offsets = [offset for offset, event_type, *_ in quantized.events if event_type == 'note_on']
+        self.assertEqual(note_on_offsets[0:3], [0.0, 0.03, 0.06])
+        self.assertEqual(note_on_offsets[3:6], [1.0, 1.03, 1.06])
 
     def test_quantize_first_track_snaps_to_triplet_grid(self):
         track = loop_mode_module.LoopTrack(

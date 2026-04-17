@@ -4,12 +4,14 @@ modes/loop_mode.py — Loop Mode track storage and playback.
 Each LoopTrack stores a list of timestamped MIDI events and a total duration.
 play_track_loop() runs in a daemon thread and loops the track until stop_event is set.
 """
+from collections import defaultdict
 import time
 from dataclasses import dataclass
 
 AUTO_FIT_TOLERANCE = 0.10
 FIRST_TRACK_QUANTIZE_SUBDIVISIONS = (2, 3, 4, 6, 8, 12, 16)
 FIRST_TRACK_QUANTIZE_TOLERANCE = 0.12
+ATTACK_GROUP_WINDOW = 0.12
 
 
 @dataclass
@@ -26,25 +28,35 @@ def quantize_track_to_step(track,
     if track.duration <= 0 or not track.events or step <= 0:
         return track, None
 
-    decision_offsets = [
-        time_offset
-        for time_offset, event_type, *_ in track.events
-        if event_type in decision_event_types
-    ]
-    if not decision_offsets:
+    groups = _note_on_groups(track.events)
+    if not groups:
         return track, None
 
     max_error = 0.0
-    quantized_events = []
-    for index, (time_offset, event_type, channel, note, velocity) in enumerate(track.events):
-        snapped = round(time_offset / step) * step
+    group_deltas = {}
+    for group in groups:
+        snapped = round(group['start'] / step) * step
         snapped = min(track.duration, max(0.0, snapped))
-        if event_type in decision_event_types:
-            max_error = max(max_error, abs(time_offset - snapped))
-        quantized_events.append((snapped, event_type, channel, note, velocity, index))
+        max_error = max(max_error, abs(group['start'] - snapped))
+        for index in group['indices']:
+            group_deltas[index] = snapped - group['start']
 
     if max_error > tolerance * step:
         return track, None
+
+    active_note_shifts = defaultdict(list)
+    quantized_events = []
+    for index, (time_offset, event_type, channel, note, velocity) in enumerate(track.events):
+        key = (channel, note)
+        if event_type == 'note_on':
+            delta = group_deltas.get(index, 0.0)
+            active_note_shifts[key].append(delta)
+        elif event_type == 'note_off' and active_note_shifts[key]:
+            delta = active_note_shifts[key].pop(0)
+        else:
+            delta = 0.0
+        snapped = min(track.duration, max(0.0, time_offset + delta))
+        quantized_events.append((snapped, event_type, channel, note, velocity, index))
 
     quantized_events.sort(
         key=lambda event: (
@@ -109,9 +121,8 @@ def quantize_first_track(track,
     if track.duration <= 0 or not track.events:
         return track, None
 
-    note_on_offsets = sorted(
-        {time_offset for time_offset, event_type, *_ in track.events if event_type == 'note_on'}
-    )
+    groups = _note_on_groups(track.events)
+    note_on_offsets = [group['start'] for group in groups]
     if len(note_on_offsets) < 2:
         return track, None
 
@@ -144,6 +155,20 @@ def quantize_first_track(track,
         'max_error': quantize_info['max_error'],
         'step': quantize_info['step'],
     }
+
+
+def _note_on_groups(events, window=ATTACK_GROUP_WINDOW):
+    groups = []
+    current = None
+    for index, (time_offset, event_type, channel, note, velocity) in enumerate(events):
+        if event_type != 'note_on':
+            continue
+        if current is None or time_offset - current['start'] > window:
+            current = {'start': time_offset, 'indices': [index]}
+            groups.append(current)
+        else:
+            current['indices'].append(index)
+    return groups
 
 
 def play_track_loop(track, fs, stop_event):
