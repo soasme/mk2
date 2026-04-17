@@ -410,6 +410,7 @@ def parse_events(msg, state):
                 # Configured pad sequence: toggle Note Challenge Mode
                 e_digits, e_bank_sep, e_bank_digits = state['note_challenge_entry']
                 cl_digits, cl_bank_sep, cl_bank_digits = state['chord_learning_entry']
+                lm_digits, lm_bank_sep, lm_bank_digits = state['loop_mode_entry']
                 if (digits == e_digits
                         and state['key_select_bank_sep'] == e_bank_sep
                         and bank_digits == e_bank_digits):
@@ -421,6 +422,13 @@ def parse_events(msg, state):
                         and state['key_select_bank_sep'] == cl_bank_sep
                         and bank_digits == cl_bank_digits):
                     events.append(EnterChordLearningEvent())
+                elif (digits == lm_digits
+                        and state['key_select_bank_sep'] == lm_bank_sep
+                        and bank_digits == lm_bank_digits):
+                    if state['loop_mode_active']:
+                        events.append(ExitLoopModeEvent())
+                    else:
+                        events.append(EnterLoopModeEvent())
                 elif digits:
                     if key_select_channel == state['ch_pads']:
                         print(

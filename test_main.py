@@ -545,6 +545,39 @@ class LoopModeParseEventsTests(unittest.TestCase):
         self.assertEqual(main.CC_TRACK_LEFT, 103)
         self.assertEqual(main.CC_TRACK_RIGHT, 102)
 
+    def test_enter_loop_mode(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        with contextlib.redirect_stdout(io.StringIO()):
+            main.parse_events(msg('control_change', control=main.CC_KEY_SELECT, value=127), state)
+            main.parse_events(msg('note_on', note=47, velocity=127, channel=state['ch_pads']), state)
+            main.parse_events(msg('note_on', note=42, velocity=127, channel=state['ch_pads']), state)
+            events = main.parse_events(msg('control_change', control=main.CC_KEY_SELECT, value=0), state)
+
+        self.assertEqual(len(events), 1)
+        self.assertIsInstance(events[0], main.EnterLoopModeEvent)
+
+    def test_exit_loop_mode(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        with contextlib.redirect_stdout(io.StringIO()):
+            main.parse_events(msg('control_change', control=main.CC_KEY_SELECT, value=127), state)
+            main.parse_events(msg('note_on', note=47, velocity=127, channel=state['ch_pads']), state)
+            main.parse_events(msg('note_on', note=42, velocity=127, channel=state['ch_pads']), state)
+            events = main.parse_events(msg('control_change', control=main.CC_KEY_SELECT, value=0), state)
+
+        self.assertEqual(len(events), 1)
+        self.assertIsInstance(events[0], main.ExitLoopModeEvent)
+
+    def test_loop_mode_entry_does_not_also_emit_program_change(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        with contextlib.redirect_stdout(io.StringIO()):
+            main.parse_events(msg('control_change', control=main.CC_KEY_SELECT, value=127), state)
+            main.parse_events(msg('note_on', note=47, velocity=127, channel=state['ch_pads']), state)
+            main.parse_events(msg('note_on', note=42, velocity=127, channel=state['ch_pads']), state)
+            events = main.parse_events(msg('control_change', control=main.CC_KEY_SELECT, value=0), state)
+
+        self.assertFalse(any(isinstance(e, main.ProgramChangeEvent) for e in events))
+
 
 if __name__ == '__main__':
     unittest.main()
