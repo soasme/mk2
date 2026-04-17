@@ -346,6 +346,14 @@ def parse_events(msg, state):
                     is_release=False,
                 ))
 
+            # Loop Mode: buffer note events during recording
+            if (state['loop_mode_recording']
+                    and (msg.channel == state['ch_keys'] or msg.channel == state['ch_pads'])):
+                offset = time.time() - state['loop_mode_record_start']
+                state['loop_mode_record_buffer'].append(
+                    (offset, 'note_on', msg.channel, msg.note, msg.velocity)
+                )
+
     elif msg.type == 'note_off':
         if msg.note in state['channel_select_captured']:
             state['channel_select_captured'].discard(msg.note)
@@ -365,6 +373,14 @@ def parse_events(msg, state):
                     held=frozenset(state['chord_learning_held']),
                     is_release=True,
                 ))
+
+            # Loop Mode: buffer note_off during recording
+            if (state['loop_mode_recording']
+                    and (msg.channel == state['ch_keys'] or msg.channel == state['ch_pads'])):
+                offset = time.time() - state['loop_mode_record_start']
+                state['loop_mode_record_buffer'].append(
+                    (offset, 'note_off', msg.channel, msg.note, 0)
+                )
 
     elif msg.type == 'control_change':
         if state['loop_mode_active'] and msg.control == CC_TRACK_RIGHT and msg.value == 127:

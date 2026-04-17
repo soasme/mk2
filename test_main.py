@@ -654,6 +654,66 @@ class LoopModeParseEventsTests(unittest.TestCase):
         self.assertTrue(any(isinstance(e, main.ProgramChangeEvent) for e in events))
         self.assertFalse(any(isinstance(e, main.LoopModePlaybackToggleEvent) for e in events))
 
+    def test_note_on_buffered_during_recording_and_still_plays(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        state['loop_mode_recording'] = True
+        state['loop_mode_record_start'] = time.time()
+
+        events = main.parse_events(
+            msg('note_on', note=60, velocity=100, channel=state['ch_keys']), state
+        )
+
+        # NoteOnEvent still emitted
+        self.assertTrue(any(isinstance(e, main.NoteOnEvent) for e in events))
+        # Event buffered
+        self.assertEqual(len(state['loop_mode_record_buffer']), 1)
+        buf_entry = state['loop_mode_record_buffer'][0]
+        self.assertEqual(buf_entry[1], 'note_on')
+        self.assertEqual(buf_entry[2], state['ch_keys'])
+        self.assertEqual(buf_entry[3], 60)
+        self.assertEqual(buf_entry[4], 100)
+
+    def test_note_off_buffered_during_recording(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        state['loop_mode_recording'] = True
+        state['loop_mode_record_start'] = time.time()
+
+        events = main.parse_events(
+            msg('note_off', note=60, channel=state['ch_keys']), state
+        )
+
+        self.assertTrue(any(isinstance(e, main.NoteOffEvent) for e in events))
+        self.assertEqual(len(state['loop_mode_record_buffer']), 1)
+        buf_entry = state['loop_mode_record_buffer'][0]
+        self.assertEqual(buf_entry[1], 'note_off')
+        self.assertEqual(buf_entry[3], 60)
+
+    def test_pad_notes_also_buffered_during_recording(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        state['loop_mode_recording'] = True
+        state['loop_mode_record_start'] = time.time()
+
+        main.parse_events(
+            msg('note_on', note=36, velocity=100, channel=state['ch_pads']), state
+        )
+
+        self.assertEqual(len(state['loop_mode_record_buffer']), 1)
+        self.assertEqual(state['loop_mode_record_buffer'][0][2], state['ch_pads'])
+
+    def test_notes_not_buffered_when_not_recording(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        state['loop_mode_recording'] = False
+
+        main.parse_events(
+            msg('note_on', note=60, velocity=100, channel=state['ch_keys']), state
+        )
+
+        self.assertEqual(state['loop_mode_record_buffer'], [])
+
 
 if __name__ == '__main__':
     unittest.main()
