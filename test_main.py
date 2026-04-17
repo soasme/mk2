@@ -796,6 +796,34 @@ class LoopModeHandleEventTests(unittest.TestCase):
         self.assertTrue(stop_ev0.is_set())
         self.assertTrue(stop_ev1.is_set())
 
+    def test_track_right_advances_track(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        state['loop_mode_current_track'] = 0
+        self._call_handle(main.LoopModeTrackRightEvent(), state)
+        self.assertEqual(state['loop_mode_current_track'], 1)
+
+    def test_track_right_wraps_at_end(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        state['loop_mode_current_track'] = 3  # last track (0-indexed, n=4)
+        self._call_handle(main.LoopModeTrackRightEvent(), state)
+        self.assertEqual(state['loop_mode_current_track'], 0)
+
+    def test_track_left_decrements_track(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        state['loop_mode_current_track'] = 2
+        self._call_handle(main.LoopModeTrackLeftEvent(), state)
+        self.assertEqual(state['loop_mode_current_track'], 1)
+
+    def test_track_left_wraps_at_start(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        state['loop_mode_current_track'] = 0
+        self._call_handle(main.LoopModeTrackLeftEvent(), state)
+        self.assertEqual(state['loop_mode_current_track'], 3)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -691,6 +691,14 @@ def handle_event(event, fs, ch_keys, ch_pads, sfid, state):
         state['loop_mode_play_stop_events'] = [None] * state['loop_mode_n_tracks']
         print("Loop Mode: exited")
         speak("Goodbye")
+    elif isinstance(event, LoopModeTrackRightEvent):
+        n = state['loop_mode_n_tracks']
+        state['loop_mode_current_track'] = (state['loop_mode_current_track'] + 1) % n
+        print(f"Loop Mode: track {state['loop_mode_current_track'] + 1}/{n}")
+    elif isinstance(event, LoopModeTrackLeftEvent):
+        n = state['loop_mode_n_tracks']
+        state['loop_mode_current_track'] = (state['loop_mode_current_track'] - 1) % n
+        print(f"Loop Mode: track {state['loop_mode_current_track'] + 1}/{n}")
     elif isinstance(event, ChordLearningNoteChangedEvent):
         cancel_chord_learning_announce_timer(state)
         if not event.is_release:
