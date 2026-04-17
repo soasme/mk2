@@ -469,6 +469,35 @@ class LoopModeTests(unittest.TestCase):
         self.assertEqual(track.events, [])
         self.assertEqual(track.duration, 0.0)
 
+    def test_fit_track_to_reference_snaps_to_nearest_multiple(self):
+        track = loop_mode_module.LoopTrack(
+            events=[
+                (0.0, 'note_on', 0, 60, 100),
+                (1.9, 'note_off', 0, 60, 0),
+            ],
+            duration=1.9,
+        )
+
+        fitted, info = loop_mode_module.fit_track_to_reference(track, reference_duration=1.0)
+
+        self.assertAlmostEqual(fitted.duration, 2.0, places=2)
+        self.assertAlmostEqual(fitted.events[-1][0], 2.0, places=2)
+        self.assertEqual(info['multiple'], 2)
+
+    def test_fit_track_to_reference_leaves_far_duration_unchanged(self):
+        track = loop_mode_module.LoopTrack(
+            events=[
+                (0.0, 'note_on', 0, 60, 100),
+                (1.6, 'note_off', 0, 60, 0),
+            ],
+            duration=1.6,
+        )
+
+        fitted, info = loop_mode_module.fit_track_to_reference(track, reference_duration=1.0)
+
+        self.assertIs(fitted, track)
+        self.assertIsNone(info)
+
     def test_play_track_loop_plays_events_in_order(self):
         played = []
         stop_event = threading.Event()
@@ -537,6 +566,7 @@ class LoopModeParseEventsTests(unittest.TestCase):
         self.assertFalse(state['loop_mode_recording'])
         self.assertEqual(state['loop_mode_record_start'], 0.0)
         self.assertEqual(state['loop_mode_record_buffer'], [])
+        self.assertIsNone(state['loop_mode_reference_duration'])
         self.assertFalse(state['loop_mode_playing'])
         self.assertEqual(len(state['loop_mode_play_stop_events']), 4)
         self.assertTrue(all(e is None for e in state['loop_mode_play_stop_events']))
@@ -920,6 +950,25 @@ class LoopModeHandleEventTests(unittest.TestCase):
         self.assertEqual(state['loop_mode_record_buffer'], [])
         self.assertGreater(state['loop_mode_record_start'], 0.0)
 
+    def test_first_saved_track_sets_length_reference(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        state['loop_mode_recording'] = True
+        state['loop_mode_record_start'] = time.time() - 1.0
+        state['loop_mode_record_buffer'] = [
+            (0.0, 'note_on', 0, 60, 100),
+            (0.5, 'note_off', 0, 60, 0),
+        ]
+
+        self._call_handle(main.LoopModeRecordToggleEvent(), state)
+
+        self.assertIsNotNone(state['loop_mode_reference_duration'])
+        self.assertAlmostEqual(
+            state['loop_mode_reference_duration'],
+            state['loop_mode_tracks'][0].duration,
+            places=2,
+        )
+
     def test_record_toggle_stops_recording_and_saves_track_with_events(self):
         state = main.make_input_state(ch_keys=0, ch_pads=9)
         state['loop_mode_active'] = True
@@ -952,6 +1001,43 @@ class LoopModeHandleEventTests(unittest.TestCase):
         self.assertAlmostEqual(track.events[1][0], 0.4, places=1)
         self.assertGreater(track.duration, 0.9)
         self.assertLess(track.duration, 1.2)
+
+    def test_record_toggle_auto_fits_duration_to_reference_multiple(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        state['loop_mode_current_track'] = 1
+        state['loop_mode_reference_duration'] = 1.0
+        state['loop_mode_recording'] = True
+        state['loop_mode_record_start'] = time.time() - 1.9
+        state['loop_mode_record_buffer'] = [
+            (0.0, 'note_on', 0, 60, 100),
+            (1.9, 'note_off', 0, 60, 0),
+        ]
+
+        self._call_handle(main.LoopModeRecordToggleEvent(), state)
+
+        track = state['loop_mode_tracks'][1]
+        self.assertAlmostEqual(track.duration, 2.0, places=2)
+        self.assertAlmostEqual(track.events[-1][0], 2.0, places=2)
+        self.assertEqual(state['loop_mode_reference_duration'], 1.0)
+
+    def test_record_toggle_leaves_duration_when_far_from_reference_multiple(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        state['loop_mode_current_track'] = 1
+        state['loop_mode_reference_duration'] = 1.0
+        state['loop_mode_recording'] = True
+        state['loop_mode_record_start'] = time.time() - 1.6
+        state['loop_mode_record_buffer'] = [
+            (0.0, 'note_on', 0, 60, 100),
+            (1.6, 'note_off', 0, 60, 0),
+        ]
+
+        self._call_handle(main.LoopModeRecordToggleEvent(), state)
+
+        track = state['loop_mode_tracks'][1]
+        self.assertGreater(track.duration, 1.5)
+        self.assertLess(track.duration, 1.7)
 
     def test_record_toggle_stops_recording_clears_track_on_empty_buffer(self):
         state = main.make_input_state(ch_keys=0, ch_pads=9)

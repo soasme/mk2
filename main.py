@@ -269,6 +269,7 @@ def make_input_state(ch_keys, ch_pads, n_notes=4):
         'loop_mode_recording': False,
         'loop_mode_record_start': 0.0,
         'loop_mode_record_buffer': [],
+        'loop_mode_reference_duration': None,
         'loop_mode_playing': False,
         'loop_mode_play_stop_events': [None] * 4,
     }
@@ -694,6 +695,7 @@ def handle_event(event, fs, ch_keys, ch_pads, sfid, state):
         state['loop_mode_current_track'] = 0
         state['loop_mode_recording'] = False
         state['loop_mode_record_buffer'] = []
+        state['loop_mode_reference_duration'] = None
         state['loop_mode_playing'] = False
         state['loop_mode_play_stop_events'] = [None] * n
         print("Loop Mode: active")
@@ -705,6 +707,7 @@ def handle_event(event, fs, ch_keys, ch_pads, sfid, state):
         state['loop_mode_active'] = False
         state['loop_mode_playing'] = False
         state['loop_mode_recording'] = False
+        state['loop_mode_reference_duration'] = None
         state['loop_mode_play_stop_events'] = [None] * state['loop_mode_n_tracks']
         print("Loop Mode: exited")
         speak("Goodbye")
@@ -741,13 +744,28 @@ def handle_event(event, fs, ch_keys, ch_pads, sfid, state):
                     for offset, event_type, channel, note, velocity in buf
                 ]
                 trimmed_duration = max(trimmed[-1][0], duration - lead_in)
-                state['loop_mode_tracks'][idx] = loop_mode.LoopTrack(
+                track = loop_mode.LoopTrack(
                     events=trimmed,
                     duration=trimmed_duration,
                 )
+                fit_info = None
+                reference_duration = state['loop_mode_reference_duration']
+                if reference_duration is None:
+                    state['loop_mode_reference_duration'] = track.duration
+                else:
+                    track, fit_info = loop_mode.fit_track_to_reference(track, reference_duration)
+                state['loop_mode_tracks'][idx] = track
+                if fit_info is not None and abs(fit_info['source_duration'] - fit_info['target_duration']) > 1e-6:
+                    print(
+                        "Loop Mode: "
+                        f"track {idx + 1} auto-fit to {fit_info['multiple']}x reference "
+                        f"({fit_info['source_duration']:.2f}s -> {fit_info['target_duration']:.2f}s)"
+                    )
                 print(f"Loop Mode: track {idx + 1} saved ({duration:.2f}s, {len(buf)} events)")
             else:
                 state['loop_mode_tracks'][idx] = None
+                if all(track is None for track in state['loop_mode_tracks']):
+                    state['loop_mode_reference_duration'] = None
                 print(f"Loop Mode: track {idx + 1} cleared")
             # If global playback is on and track has content, restart playback for this track
             if state['loop_mode_playing'] and state['loop_mode_tracks'][idx] is not None:
