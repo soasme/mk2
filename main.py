@@ -79,6 +79,8 @@ CC_PAD_SELECT     = 104   # Scene Up (upper round pad)
 CC_KEY_SELECT     = 105   # Scene Down (lower round pad)
 CC_TRACK_LEFT     = 103   # Track Left (left arrow button)
 CC_TRACK_RIGHT    = 102   # Track Right (right arrow button)
+CC_LOOP_RECORD    = 108   # Play Button 1 transport button
+CC_LOOP_PLAYBACK  = 109   # Play Button 2 transport button
 CC_CHANNEL_SELECT = None  # TODO: discover with DEBUG=1 — hold button + press pads 1-9 to pick channel
 
 # Basic-mode note numbers for pads 1-10, mapped to digit (pad 10 → 0)
@@ -388,6 +390,14 @@ def parse_events(msg, state):
             return events
         if state['loop_mode_active'] and msg.control == CC_TRACK_LEFT and msg.value == 127:
             events.append(LoopModeTrackLeftEvent())
+            return events
+        if state['loop_mode_active'] and msg.control == CC_LOOP_RECORD:
+            if msg.value == 127:
+                events.append(LoopModeRecordToggleEvent())
+            return events
+        if state['loop_mode_active'] and msg.control == CC_LOOP_PLAYBACK:
+            if msg.value == 127:
+                events.append(LoopModePlaybackToggleEvent())
             return events
         if CC_CHANNEL_SELECT is not None and msg.control == CC_CHANNEL_SELECT:
             if msg.value == 127:

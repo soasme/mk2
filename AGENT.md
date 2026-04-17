@@ -153,6 +153,8 @@ Entry/exit: hold KeySelect and press the pad sequence configured in `loop_mode.e
 | Track Right (CC 102) | Switch to next track (wraps) |
 | Scene Up (CC 104) bare tap (no pad pressed) | Toggle recording for the current track |
 | Scene Down (CC 105) bare tap (no pad pressed) | Toggle playback of all tracks |
+| Play Button 1 (CC 108) | Toggle recording for the current track |
+| Play Button 2 (CC 109) | Toggle playback of all tracks |
 | KeySelect + digit pads | Change instrument on the keys channel (works normally) |
 | PadSelect + digit pad 1-9 | Change percussion kit on the pads channel (works normally) |
 

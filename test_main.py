@@ -23,6 +23,8 @@ class ParseEventsTests(unittest.TestCase):
     def test_scene_button_cc_mappings(self):
         self.assertEqual(main.CC_PAD_SELECT, 104)
         self.assertEqual(main.CC_KEY_SELECT, 105)
+        self.assertEqual(main.CC_LOOP_RECORD, 108)
+        self.assertEqual(main.CC_LOOP_PLAYBACK, 109)
 
     def test_key_select_press_prints_latched_target_channel(self):
         state = main.make_input_state(ch_keys=0, ch_pads=9)
@@ -643,6 +645,40 @@ class LoopModeParseEventsTests(unittest.TestCase):
             events = main.parse_events(msg('control_change', control=main.CC_KEY_SELECT, value=0, channel=0), state)
         self.assertEqual(len(events), 1)
         self.assertIsInstance(events[0], main.LoopModePlaybackToggleEvent)
+
+    def test_loop_record_button_in_loop_mode_emits_record_toggle(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        events = main.parse_events(
+            msg('control_change', control=main.CC_LOOP_RECORD, value=127, channel=0), state
+        )
+        self.assertEqual(len(events), 1)
+        self.assertIsInstance(events[0], main.LoopModeRecordToggleEvent)
+
+    def test_loop_record_button_release_ignored_in_loop_mode(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        events = main.parse_events(
+            msg('control_change', control=main.CC_LOOP_RECORD, value=0, channel=0), state
+        )
+        self.assertEqual(events, [])
+
+    def test_loop_playback_button_in_loop_mode_emits_playback_toggle(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        events = main.parse_events(
+            msg('control_change', control=main.CC_LOOP_PLAYBACK, value=127, channel=0), state
+        )
+        self.assertEqual(len(events), 1)
+        self.assertIsInstance(events[0], main.LoopModePlaybackToggleEvent)
+
+    def test_loop_playback_button_release_ignored_in_loop_mode(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        events = main.parse_events(
+            msg('control_change', control=main.CC_LOOP_PLAYBACK, value=0, channel=0), state
+        )
+        self.assertEqual(events, [])
 
     def test_key_select_with_digits_in_loop_mode_emits_program_change(self):
         state = main.make_input_state(ch_keys=0, ch_pads=9)
