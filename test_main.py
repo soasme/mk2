@@ -777,6 +777,38 @@ class LoopModeParseEventsTests(unittest.TestCase):
         self.assertEqual(buf_entry[2], state['ch_keys'])
         self.assertEqual(buf_entry[3], 60)
 
+    def test_note_on_buffered_when_input_channel_differs_from_configured_keys_channel(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        state['loop_mode_recording'] = True
+        state['loop_mode_record_start'] = time.time()
+
+        events = main.parse_events(
+            msg('note_on', note=60, velocity=100, channel=1), state
+        )
+
+        note_event = next(e for e in events if isinstance(e, main.NoteOnEvent))
+        self.assertEqual(note_event.channel, 1)
+        self.assertEqual(len(state['loop_mode_record_buffer']), 1)
+        self.assertEqual(state['loop_mode_record_buffer'][0][1], 'note_on')
+        self.assertEqual(state['loop_mode_record_buffer'][0][2], 1)
+
+    def test_note_off_buffered_when_input_channel_differs_from_configured_keys_channel(self):
+        state = main.make_input_state(ch_keys=0, ch_pads=9)
+        state['loop_mode_active'] = True
+        state['loop_mode_recording'] = True
+        state['loop_mode_record_start'] = time.time()
+
+        events = main.parse_events(
+            msg('note_off', note=60, channel=1), state
+        )
+
+        note_event = next(e for e in events if isinstance(e, main.NoteOffEvent))
+        self.assertEqual(note_event.channel, 1)
+        self.assertEqual(len(state['loop_mode_record_buffer']), 1)
+        self.assertEqual(state['loop_mode_record_buffer'][0][1], 'note_off')
+        self.assertEqual(state['loop_mode_record_buffer'][0][2], 1)
+
     def test_note_on_buffered_uses_normalized_velocity(self):
         state = main.make_input_state(ch_keys=0, ch_pads=9)
         state['loop_mode_active'] = True

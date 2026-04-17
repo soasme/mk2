@@ -353,8 +353,7 @@ def parse_events(msg, state):
                 ))
 
             # Loop Mode: buffer note events during recording
-            if (state['loop_mode_recording']
-                    and (msg.channel == state['ch_keys'] or msg.channel == state['ch_pads'])):
+            if state['loop_mode_recording']:
                 offset = time.time() - state['loop_mode_record_start']
                 state['loop_mode_record_buffer'].append(
                     (offset, 'note_on', ch, msg.note, vel)
@@ -381,8 +380,7 @@ def parse_events(msg, state):
                 ))
 
             # Loop Mode: buffer note_off during recording
-            if (state['loop_mode_recording']
-                    and (msg.channel == state['ch_keys'] or msg.channel == state['ch_pads'])):
+            if state['loop_mode_recording']:
                 offset = time.time() - state['loop_mode_record_start']
                 state['loop_mode_record_buffer'].append(
                     (offset, 'note_off', ch, msg.note, 0)
