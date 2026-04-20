@@ -92,7 +92,7 @@ Settings for Note Challenge ear-training mode.
 
 ## `[chord_challenge]`
 
-Settings for Chorus Challenge Mode.
+Settings for Chord Challenge Mode.
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
