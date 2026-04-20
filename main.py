@@ -351,7 +351,7 @@ def parse_events(msg, state):
                 state['chord_challenge_held'].add(msg.note)
                 held = frozenset(state['chord_challenge_held'])
                 chord = state['chord_challenge_current_chord']
-                if chord and chord_challenge.check_chord(held, chord[2]):
+                if chord and chord_challenge.check_chord(held, chord[3]):
                     events.append(ChordChallengeSuccessEvent())
                 else:
                     events.append(ChordChallengeNoteChangedEvent(held=held))
@@ -519,6 +519,18 @@ def speak(text, wait=False):
         print(f"Warning: TTS failed: {e}")
 
 
+def speak_chord_cue(chord, pause: float = 1.0) -> None:
+    """Speak a natural chord cue: chord name, pause, then each note individually.
+
+    e.g. "C Major" <1s> "C" <1s> "E" <1s> "G"
+    chord is a (display, chord_tts, note_names_list, pitch_classes) tuple.
+    """
+    speak(chord[1], wait=True)
+    for note in chord[2]:
+        time.sleep(pause)
+        speak(note, wait=True)
+
+
 def normalize_say_text(text: str) -> str:
     """Make standalone A speak as a letter on macOS `say`."""
     return re.sub(r'\bA\b', 'A.', text)
@@ -634,7 +646,7 @@ def handle_event(event, fs, ch_keys, ch_pads, sfid, state):
         print(f"Chord Challenge Mode: active — {chord[0]}")
         def _start_chord(c=chord):
             speak("Chord Challenge Mode", wait=True)
-            speak(c[1])
+            speak_chord_cue(c)
         threading.Thread(target=_start_chord, daemon=True).start()
     elif isinstance(event, ExitChordChallengeEvent):
         state['chord_challenge_active'] = False
@@ -652,14 +664,14 @@ def handle_event(event, fs, ch_keys, ch_pads, sfid, state):
         print(f"Chord Challenge Mode: correct! Next — {chord[0]}")
         # Play chord sound (like note challenge bingo)
         if old_chord:
-            chord_challenge.play_chord_async(old_chord[2], ch_keys, fs)
+            chord_challenge.play_chord_async(old_chord[3], ch_keys, fs)
         bingo_sound = state.get('note_challenge_bingo_sound')
         def _success_then_next(c=chord, sound=bingo_sound):
             if sound:
                 play_sound(sound, wait=True)
             else:
                 speak("Correct", wait=True)
-            speak(c[1])
+            speak_chord_cue(c)
         threading.Thread(target=_success_then_next, daemon=True).start()
     elif isinstance(event, EnterLoopModeEvent):
         # Stop any existing playback

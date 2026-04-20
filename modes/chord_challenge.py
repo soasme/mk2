@@ -32,10 +32,10 @@ def _build_chords():
         root_name = _NOTE_NAMES[root]
         for quality, intervals in _CHORD_TYPES:
             pcs = frozenset((root + i) % 12 for i in intervals)
-            note_names = ', '.join(_NOTE_NAMES[(root + i) % 12] for i in intervals)
+            note_names = [_NOTE_NAMES[(root + i) % 12] for i in intervals]
             display = f'{root_name} {quality}'
-            tts = f'{root_name} {quality} Chord is {note_names}'
-            chords.append((display, tts, pcs))
+            chord_tts = f'{root_name} {quality}'
+            chords.append((display, chord_tts, note_names, pcs))
     return chords
 
 
