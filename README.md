@@ -481,22 +481,27 @@ The number of notes in each sequence is configurable (default 3):
 n_notes = 3
 ```
 
-### Chord Learning Mode
+### Chorus Challenge Mode — chord ear training
 
-Chord Learning Mode identifies the currently held chord after your notes settle, then speaks the result via TTS.
+Chorus Challenge Mode is a chord ear-training game. The synthesizer announces a chord (e.g. *"C Major Chord is C, E, G"*) and you must press all the named notes simultaneously.
 
 **Enter the mode:** Hold **KeySelect** (Scene Down), press **Pad 16**, then **Pad 2**, then release KeySelect.
 
-Use the same gesture again to reset Chord Learning Mode to a clean state. It does not speak "Goodbye" or toggle the mode off.
+Once active, the target chord is announced via TTS. Press all the chord notes together on the keys. When the correct pitch classes are all held simultaneously:
+- The chord plays back through FluidSynth
+- The game says **"Correct"** (or plays the configured bingo sound)
+- A new random chord is announced
 
-While active, keys still play normally. The app waits a short delay after the last note-on or note-off before announcing the chord, which avoids hearing every intermediate partial chord while you are still pressing notes.
+**Exit:** hold KeySelect, press Pad 16, press Pad 2, release KeySelect (same gesture — it toggles).
 
-If you want more time before it speaks, increase the delay:
+The game covers all 48 chords across all 12 chromatic roots:
 
-```toml
-[chord_learning]
-announce_delay = 0.35
-```
+| Type | Intervals |
+|------|-----------|
+| Major | root, major 3rd, perfect 5th |
+| Minor | root, minor 3rd, perfect 5th |
+| Augmented | root, major 3rd, augmented 5th |
+| Diminished | root, minor 3rd, diminished 5th |
 
 ### Loop Mode
 

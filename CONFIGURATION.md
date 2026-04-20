@@ -90,15 +90,14 @@ Settings for Note Challenge ear-training mode.
 
 ---
 
-## `[chord_learning]`
+## `[chorus_challenge]`
 
-Settings for Chord Learning mode.
+Settings for Chorus Challenge Mode.
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `entry_pads` | string | `"16,2"` | Comma-separated pad numbers to press while holding KeySelect to enter or reset the mode. Pad 16 acts as the bank separator; pads 1–10 contribute digits. Example: `"16,3"` requires Pad 16 then Pad 3. |
-| `chord_set` | string | `"extended"` | Recognition set to use. Supported values: `"minimal"`, `"core_set"`, `"extended"`. |
-| `announce_delay` | float | `0.2` | Seconds to wait after the last held-note change before announcing the detected chord. Increase this if you want the app to wait for your full voicing before speaking. |
+| `entry_pads` | string | `"16,2"` | Comma-separated pad numbers to press while holding KeySelect to toggle the mode. Pad 16 acts as the bank separator; pads 1–10 contribute digits. |
+| `bingo_sound` | string | *(none)* | Path to an audio file played on a correct chord match. When omitted, falls back to TTS "Correct" via `SAY_INSTRUMENT`. |
 
 ---
 

@@ -17,7 +17,7 @@ import tomllib
 from dataclasses import dataclass
 import mido
 import fluidsynth
-from modes import chord_learning, note_challenge, chorus_challenge
+from modes import note_challenge, chorus_challenge
 from modes import loop_mode
 
 DEBUG = os.environ.get('DEBUG') == '1'
@@ -161,19 +161,6 @@ class NoteChallengeBingoEvent:
     pass
 
 @dataclass
-class EnterChordLearningEvent:
-    pass
-
-@dataclass
-class ExitChordLearningEvent:
-    pass
-
-@dataclass
-class ChordLearningNoteChangedEvent:
-    held: frozenset  # current set of held MIDI notes
-    is_release: bool  # whether this change came from a note-off
-
-@dataclass
 class EnterChorusChallengeEvent:
     pass
 
@@ -269,13 +256,6 @@ def make_input_state(ch_keys, ch_pads, n_notes=4):
         'note_challenge_max': 72,          # highest possible note (C5)
         'note_challenge_entry': parse_entry_pads('16,1'),  # (digits, bank_sep, bank_digits)
         'note_challenge_captured': set(),  # pad notes consumed by the mode
-        # Chord Learning Mode
-        'chord_learning_active': False,
-        'chord_learning_held': set(),
-        'chord_learning_entry': parse_entry_pads('16,4'),
-        'chord_learning_chord_set': 'core_set',
-        'chord_learning_announce_delay': 0.2,  # seconds to wait after last key change
-        'chord_learning_announce_timer': None,  # pending threading.Timer
         # Chorus Challenge Mode
         'chorus_challenge_active': False,
         'chorus_challenge_held': set(),
@@ -366,14 +346,6 @@ def parse_events(msg, state):
                           f"— last {len(recent)}: {note_challenge.note_names_display(recent)} "
                           f"(target: {note_challenge.note_names_display(target)}, {hits}/{n} trailing match)")
 
-            # Chord Learning Mode: track held notes
-            if state['chord_learning_active'] and msg.channel == state['ch_keys']:
-                state['chord_learning_held'].add(msg.note)
-                events.append(ChordLearningNoteChangedEvent(
-                    held=frozenset(state['chord_learning_held']),
-                    is_release=False,
-                ))
-
             # Chorus Challenge Mode: track held notes and check for chord match
             if state['chorus_challenge_active'] and msg.channel == state['ch_keys']:
                 state['chorus_challenge_held'].add(msg.note)
@@ -403,14 +375,6 @@ def parse_events(msg, state):
         else:
             ch = state['current_keys_channel'] if msg.channel == state['ch_keys'] else msg.channel
             events.append(NoteOffEvent(ch, msg.note))
-            # Chord Learning Mode: update held notes
-            if state['chord_learning_active'] and msg.channel == state['ch_keys']:
-                state['chord_learning_held'].discard(msg.note)
-                events.append(ChordLearningNoteChangedEvent(
-                    held=frozenset(state['chord_learning_held']),
-                    is_release=True,
-                ))
-
             # Chorus Challenge Mode: update held notes
             if state['chorus_challenge_active'] and msg.channel == state['ch_keys']:
                 state['chorus_challenge_held'].discard(msg.note)
@@ -485,7 +449,6 @@ def parse_events(msg, state):
                 key_select_channel = state['key_select_channel']
                 # Configured pad sequence: toggle Note Challenge Mode
                 e_digits, e_bank_sep, e_bank_digits = state['note_challenge_entry']
-                cl_digits, cl_bank_sep, cl_bank_digits = state['chord_learning_entry']
                 cc_digits, cc_bank_sep, cc_bank_digits = state['chorus_challenge_entry']
                 lm_digits, lm_bank_sep, lm_bank_digits = state['loop_mode_entry']
                 if (digits == e_digits
@@ -495,10 +458,6 @@ def parse_events(msg, state):
                         events.append(ExitNoteChallengeEvent())
                     else:
                         events.append(EnterNoteChallengeEvent())
-                elif (digits == cl_digits
-                        and state['key_select_bank_sep'] == cl_bank_sep
-                        and bank_digits == cl_bank_digits):
-                    events.append(EnterChordLearningEvent())
                 elif (digits == cc_digits
                         and state['key_select_bank_sep'] == cc_bank_sep
                         and bank_digits == cc_bank_digits):
@@ -584,43 +543,6 @@ def program_select_with_fallback(fs, channel, sfid, bank, program):
     return bank
 
 
-def cancel_chord_learning_announce_timer(state):
-    """Cancel any pending chord-learning announcement."""
-    timer = state.get('chord_learning_announce_timer')
-    if timer is not None:
-        timer.cancel()
-        state['chord_learning_announce_timer'] = None
-
-
-def schedule_chord_learning_announcement(state, held):
-    """Debounce chord-learning announcements until held notes settle."""
-    cancel_chord_learning_announce_timer(state)
-    if len(held) < 2:
-        return
-
-    chord_set = state['chord_learning_chord_set']
-    delay = max(0.0, float(state.get('chord_learning_announce_delay', 0.2)))
-    timer = None
-
-    def _announce(h=held, cs=chord_set):
-        if state.get('chord_learning_announce_timer') is not timer:
-            return
-        state['chord_learning_announce_timer'] = None
-        if not state['chord_learning_active']:
-            return
-        if frozenset(state['chord_learning_held']) != h:
-            return
-        name = chord_learning.identify_chord(h, cs)
-        if name:
-            print(f"Chord Learning Mode: {name}")
-            speak(name)
-
-    timer = threading.Timer(delay, _announce)
-    timer.daemon = True
-    timer.start()
-    state['chord_learning_announce_timer'] = timer
-
-
 def handle_event(event, fs, ch_keys, ch_pads, sfid, state):
     if isinstance(event, NoteOnEvent):
         vel = event.velocity if state.get('enable_key_velocity') else 100
@@ -640,11 +562,6 @@ def handle_event(event, fs, ch_keys, ch_pads, sfid, state):
             state['note_challenge_active'] = False
             state['note_challenge_history'] = []
             print("Note Challenge Mode: exited (drum kit changed)")
-        if state['chord_learning_active']:
-            cancel_chord_learning_announce_timer(state)
-            state['chord_learning_active'] = False
-            state['chord_learning_held'] = set()
-            print("Chord Learning Mode: exited (drum kit changed)")
         actual_bank = program_select_with_fallback(fs, ch_pads, sfid, 128, event.pads_program)
         name = gm_name(actual_bank, event.pads_program)
         fallback = actual_bank != 128
@@ -658,11 +575,6 @@ def handle_event(event, fs, ch_keys, ch_pads, sfid, state):
             state['note_challenge_active'] = False
             state['note_challenge_history'] = []
             print("Note Challenge Mode: exited (tone changed)")
-        if state['chord_learning_active']:
-            cancel_chord_learning_announce_timer(state)
-            state['chord_learning_active'] = False
-            state['chord_learning_held'] = set()
-            print("Chord Learning Mode: exited (tone changed)")
         actual_bank = program_select_with_fallback(fs, event.channel, sfid, event.keys_bank, event.keys_program)
         fs.cc(event.channel, 7, 127)
         fs.cc(event.channel, 11, 127)
@@ -714,18 +626,6 @@ def handle_event(event, fs, ch_keys, ch_pads, sfid, state):
                 speak("Bingo", wait=True)
             note_challenge.play_notes_async(t, ch_keys, fs)
         threading.Thread(target=_bingo_then_play, daemon=True).start()
-    elif isinstance(event, EnterChordLearningEvent):
-        cancel_chord_learning_announce_timer(state)
-        state['chord_learning_active'] = True
-        state['chord_learning_held'] = set()
-        print("Chord Learning Mode: active")
-        speak("Chord Learning Mode")
-    elif isinstance(event, ExitChordLearningEvent):
-        cancel_chord_learning_announce_timer(state)
-        state['chord_learning_active'] = False
-        state['chord_learning_held'] = set()
-        print("Chord Learning Mode: exited")
-        speak("Goodbye")
     elif isinstance(event, EnterChorusChallengeEvent):
         state['chorus_challenge_active'] = True
         state['chorus_challenge_held'] = set()
@@ -897,10 +797,6 @@ def handle_event(event, fs, ch_keys, ch_pads, sfid, state):
                 if stop_ev is not None:
                     stop_ev.set()
                 state['loop_mode_play_stop_events'][i] = None
-    elif isinstance(event, ChordLearningNoteChangedEvent):
-        cancel_chord_learning_announce_timer(state)
-        if not event.is_release:
-            schedule_chord_learning_announcement(state, event.held)
 
 
 # ---------------------------------------------------------------------------
@@ -917,7 +813,6 @@ def main():
     midi_cfg      = cfg.get('midi', {})
     synth_cfg     = cfg.get('synth', {})
     challenge_cfg = cfg.get('note_challenge', {})
-    cl_cfg        = cfg.get('chord_learning', {})
     cc_cfg        = cfg.get('chorus_challenge', {})
     lm_cfg        = cfg.get('loop_mode', {})
 
@@ -967,12 +862,6 @@ def main():
     state['note_challenge_min'] = challenge_cfg.get('note_min', 48)
     state['note_challenge_max'] = challenge_cfg.get('note_max', 72)
     state['note_challenge_entry'] = parse_entry_pads(challenge_cfg.get('entry_pads', '16,1'))
-    state['chord_learning_entry'] = parse_entry_pads(cl_cfg.get('entry_pads', '16,4'))
-    state['chord_learning_chord_set'] = cl_cfg.get('chord_set', 'core_set')
-    state['chord_learning_announce_delay'] = max(
-        0.0,
-        float(cl_cfg.get('announce_delay', state['chord_learning_announce_delay'])),
-    )
     state['chorus_challenge_entry'] = parse_entry_pads(cc_cfg.get('entry_pads', '16,2'))
     state['loop_mode_entry'] = parse_entry_pads(lm_cfg.get('entry_pads', '16,3'))
     n_tracks = int(lm_cfg.get('n_tracks', 4))
