@@ -28,6 +28,8 @@ _ASSETS_ALPHABET = pathlib.Path(__file__).parent / 'assets' / 'alphabet'
 _ASSETS_PHRASES = pathlib.Path(__file__).parent / 'assets' / 'phrases'
 # Note letters that have a dedicated WAV file
 _LETTER_WAV_NOTES = frozenset('ABCDEFG')
+# Qualifiers that must play immediately after the preceding token (no gap).
+_GLUE_TOKENS = frozenset({'sharp', 'flat'})
 
 # GM program names, 0-indexed (bank 0 melodic, bank 128 percussion)
 GM_MELODIC = [
@@ -530,12 +532,34 @@ def _wav_for(text: str) -> pathlib.Path | None:
     return None
 
 
+def _concat_wavs(paths: list) -> pathlib.Path:
+    """Concatenate multiple WAV files into a single temp file using ffmpeg."""
+    import tempfile
+    tmp = pathlib.Path(tempfile.mktemp(suffix='.wav'))
+    # Build ffmpeg concat filter
+    inputs = []
+    for p in paths:
+        inputs += ['-i', str(p)]
+    n = len(paths)
+    filter_str = ''.join(f'[{i}:a]' for i in range(n)) + f'concat=n={n}:v=0:a=1[out]'
+    subprocess.run(
+        ['ffmpeg', '-y', *inputs, '-filter_complex', filter_str, '-map', '[out]', str(tmp)],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True,
+    )
+    return tmp
+
+
 def speak(text, wait=False):
     """Play pre-recorded WAVs for all spoken text.
 
     The text is matched against the assets/phrases/ and assets/alphabet/
     caches.  Multi-token phrases are tried first as a whole, then token
-    by token.  Any token without a cached WAV is silently skipped —
+    by token.
+
+    Glue tokens (sharp, flat) are concatenated with the preceding token
+    into a single WAV so they play with no gap between them.
+
+    Any token without a cached WAV is silently logged and skipped —
     no runtime TTS engine is invoked.
 
     To add new phrases, run scripts/compile_audio.py and commit the WAVs.
@@ -549,15 +573,33 @@ def speak(text, wait=False):
         play_sound(wav, wait=wait)
         return
 
-    # Fall back to token-by-token playback
+    # Build a list of (wav_path | None) per token, then group glue tokens
+    # with their predecessor for gapless playback.
     tokens = text.split()
-    for i, token in enumerate(tokens):
-        is_last = (i == len(tokens) - 1)
+    resolved = []
+    for token in tokens:
         wav = _wav_for(token)
-        if wav:
-            play_sound(wav, wait=(wait and is_last) or not is_last)
-        else:
+        if wav is None:
             print(f"speak: no WAV cached for '{token}' (in '{text}') — skipping")
+        resolved.append((token, wav))
+
+    # Group: merge glue tokens onto the preceding entry
+    groups = []  # list of [wav, ...] to play as one unit
+    for token, wav in resolved:
+        if wav is None:
+            continue
+        if token in _GLUE_TOKENS and groups:
+            groups[-1].append(wav)
+        else:
+            groups.append([wav])
+
+    for i, group in enumerate(groups):
+        is_last = (i == len(groups) - 1)
+        if len(group) == 1:
+            play_sound(group[0], wait=(wait and is_last) or not is_last)
+        else:
+            merged = _concat_wavs(group)
+            play_sound(merged, wait=(wait and is_last) or not is_last)
 
 
 def speak_chord_cue(chord, pause: float = 1.0) -> None:

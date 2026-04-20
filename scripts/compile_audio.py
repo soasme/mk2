@@ -36,8 +36,9 @@ LETTERS = list('ABCDEFG')
 # All other phrases spoken at runtime, keyed by the text speak() receives.
 # The dict value is the WAV filename stem (spaces → underscores).
 PHRASES = {
-    # Note qualifier
+    # Note qualifiers
     'sharp':               'sharp',
+    'flat':                'flat',
     # Chord qualities
     'Major':               'Major',
     'Minor':               'Minor',
