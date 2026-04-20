@@ -8,7 +8,6 @@ Event flow:
 """
 import os
 import pathlib
-import re
 import subprocess
 import sys
 import threading
@@ -25,6 +24,8 @@ SAY_INSTRUMENT = os.environ.get('SAY_INSTRUMENT') == '1'
 
 # Directory containing pre-recorded letter WAV files (A.wav … G.wav)
 _ASSETS_ALPHABET = pathlib.Path(__file__).parent / 'assets' / 'alphabet'
+# Directory containing pre-recorded phrase WAV files (sharp.wav, Major.wav, etc.)
+_ASSETS_PHRASES = pathlib.Path(__file__).parent / 'assets' / 'phrases'
 # Note letters that have a dedicated WAV file
 _LETTER_WAV_NOTES = frozenset('ABCDEFG')
 
@@ -509,49 +510,54 @@ def parse_events(msg, state):
 # App events → synth
 # ---------------------------------------------------------------------------
 
-def _play_letter_wav(letter: str, wait: bool = False) -> None:
-    """Play a pre-recorded WAV for a single note letter (A-G)."""
-    wav = _ASSETS_ALPHABET / f"{letter.upper()}.wav"
-    if wav.exists():
-        play_sound(wav, wait=wait)
-    else:
-        # Fallback to TTS if wav is missing
-        _speak_raw(letter, wait=wait)
+def _wav_for(text: str) -> pathlib.Path | None:
+    """Return the pre-recorded WAV path for *text*, or None if not cached.
 
-
-def _speak_raw(text: str, wait: bool = False) -> None:
-    """Low-level TTS call (no letter substitution)."""
-    try:
-        if sys.platform == 'darwin':
-            cmd = ['say', normalize_say_text(text)]
-        else:
-            cmd = ['espeak', text]
-        proc = subprocess.Popen(cmd)
-        if wait:
-            proc.wait()
-    except Exception as e:
-        print(f"Warning: TTS failed: {e}")
+    Lookup order:
+      1. assets/phrases/<sanitised>.wav  — multi-word phrases and qualifiers
+      2. assets/alphabet/<LETTER>.wav    — single note letters A-G
+    The sanitised filename replaces spaces with underscores, preserving case.
+    """
+    # Exact phrase match (spaces → underscores)
+    phrase_wav = _ASSETS_PHRASES / f"{text.replace(' ', '_')}.wav"
+    if phrase_wav.exists():
+        return phrase_wav
+    # Single letter note
+    if len(text) == 1 and text.upper() in _LETTER_WAV_NOTES:
+        letter_wav = _ASSETS_ALPHABET / f"{text.upper()}.wav"
+        if letter_wav.exists():
+            return letter_wav
+    return None
 
 
 def speak(text, wait=False):
-    """Speak text, using pre-recorded WAVs for isolated note letters (A-G)."""
+    """Play pre-recorded WAVs for all spoken text.
+
+    The text is matched against the assets/phrases/ and assets/alphabet/
+    caches.  Multi-token phrases are tried first as a whole, then token
+    by token.  Any token without a cached WAV is silently skipped —
+    no runtime TTS engine is invoked.
+
+    To add new phrases, run scripts/compile_audio.py and commit the WAVs.
+    """
     if not SAY_INSTRUMENT:
         return
-    # Tokenise: split on whitespace, check each token
+
+    # Try the whole string as a single cached phrase first
+    wav = _wav_for(text)
+    if wav:
+        play_sound(wav, wait=wait)
+        return
+
+    # Fall back to token-by-token playback
     tokens = text.split()
-    if len(tokens) == 1 and tokens[0].upper() in _LETTER_WAV_NOTES:
-        # Single note letter — play WAV directly
-        _play_letter_wav(tokens[0], wait=wait)
-        return
-    # Multi-word: check if the first word is a note letter followed by qualifier
-    # e.g. "A sharp", "G Major" — play wav for letter, then say the rest
-    if len(tokens) >= 2 and tokens[0].upper() in _LETTER_WAV_NOTES:
-        _play_letter_wav(tokens[0], wait=True)
-        remainder = ' '.join(tokens[1:])
-        _speak_raw(remainder, wait=wait)
-        return
-    # General text — use TTS as usual
-    _speak_raw(text, wait=wait)
+    for i, token in enumerate(tokens):
+        is_last = (i == len(tokens) - 1)
+        wav = _wav_for(token)
+        if wav:
+            play_sound(wav, wait=(wait and is_last) or not is_last)
+        else:
+            print(f"speak: no WAV cached for '{token}' (in '{text}') — skipping")
 
 
 def speak_chord_cue(chord, pause: float = 1.0) -> None:
@@ -564,11 +570,6 @@ def speak_chord_cue(chord, pause: float = 1.0) -> None:
     for note in chord[2]:
         time.sleep(pause)
         speak(note, wait=True)
-
-
-def normalize_say_text(text: str) -> str:
-    """Make standalone A speak as a letter on macOS `say` (fallback path)."""
-    return re.sub(r'\bA\b', 'A.', text)
 
 
 def play_sound(path, wait=False):
