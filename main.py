@@ -23,6 +23,11 @@ from modes import loop_mode
 DEBUG = os.environ.get('DEBUG') == '1'
 SAY_INSTRUMENT = os.environ.get('SAY_INSTRUMENT') == '1'
 
+# Directory containing pre-recorded letter WAV files (A.wav … G.wav)
+_ASSETS_ALPHABET = pathlib.Path(__file__).parent / 'assets' / 'alphabet'
+# Note letters that have a dedicated WAV file
+_LETTER_WAV_NOTES = frozenset('ABCDEFG')
+
 # GM program names, 0-indexed (bank 0 melodic, bank 128 percussion)
 GM_MELODIC = [
     "Acoustic Grand Piano", "Bright Acoustic Piano", "Electric Grand Piano", "Honky-tonk Piano",
@@ -504,9 +509,18 @@ def parse_events(msg, state):
 # App events → synth
 # ---------------------------------------------------------------------------
 
-def speak(text, wait=False):
-    if not SAY_INSTRUMENT:
-        return
+def _play_letter_wav(letter: str, wait: bool = False) -> None:
+    """Play a pre-recorded WAV for a single note letter (A-G)."""
+    wav = _ASSETS_ALPHABET / f"{letter.upper()}.wav"
+    if wav.exists():
+        play_sound(wav, wait=wait)
+    else:
+        # Fallback to TTS if wav is missing
+        _speak_raw(letter, wait=wait)
+
+
+def _speak_raw(text: str, wait: bool = False) -> None:
+    """Low-level TTS call (no letter substitution)."""
     try:
         if sys.platform == 'darwin':
             cmd = ['say', normalize_say_text(text)]
@@ -517,6 +531,27 @@ def speak(text, wait=False):
             proc.wait()
     except Exception as e:
         print(f"Warning: TTS failed: {e}")
+
+
+def speak(text, wait=False):
+    """Speak text, using pre-recorded WAVs for isolated note letters (A-G)."""
+    if not SAY_INSTRUMENT:
+        return
+    # Tokenise: split on whitespace, check each token
+    tokens = text.split()
+    if len(tokens) == 1 and tokens[0].upper() in _LETTER_WAV_NOTES:
+        # Single note letter — play WAV directly
+        _play_letter_wav(tokens[0], wait=wait)
+        return
+    # Multi-word: check if the first word is a note letter followed by qualifier
+    # e.g. "A sharp", "G Major" — play wav for letter, then say the rest
+    if len(tokens) >= 2 and tokens[0].upper() in _LETTER_WAV_NOTES:
+        _play_letter_wav(tokens[0], wait=True)
+        remainder = ' '.join(tokens[1:])
+        _speak_raw(remainder, wait=wait)
+        return
+    # General text — use TTS as usual
+    _speak_raw(text, wait=wait)
 
 
 def speak_chord_cue(chord, pause: float = 1.0) -> None:
@@ -532,7 +567,7 @@ def speak_chord_cue(chord, pause: float = 1.0) -> None:
 
 
 def normalize_say_text(text: str) -> str:
-    """Make standalone A speak as a letter on macOS `say`."""
+    """Make standalone A speak as a letter on macOS `say` (fallback path)."""
     return re.sub(r'\bA\b', 'A.', text)
 
 
