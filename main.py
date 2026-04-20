@@ -29,7 +29,7 @@ _ASSETS_PHRASES = pathlib.Path(__file__).parent / 'assets' / 'phrases'
 # Note letters that have a dedicated WAV file
 _LETTER_WAV_NOTES = frozenset('ABCDEFG')
 # Qualifiers that must play immediately after the preceding token (no gap).
-_GLUE_TOKENS = frozenset({'sharp', 'flat'})
+_GLUE_TOKENS = frozenset({'sharp', 'flat', 'Major', 'Minor', 'Augmented', 'Diminished'})
 
 # GM program names, 0-indexed (bank 0 melodic, bank 128 percussion)
 GM_MELODIC = [
