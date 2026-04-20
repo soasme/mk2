@@ -13,7 +13,7 @@ import threading
 import time
 
 # Chromatic note names (display and TTS-friendly)
-_NOTE_NAMES = ['C', 'C sharp', 'D', 'D sharp', 'E', 'F', 'F sharp', 'G', 'G sharp', 'A', 'A sharp', 'B']
+_NOTE_NAMES = ['C', 'C sharp', 'D', 'D sharp', 'E', 'F', 'F sharp', 'G', 'G sharp', 'A.', 'A. sharp', 'B']
 _NOTE_DISPLAY = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 
 # Chord type definitions: (quality_name, intervals_from_root)
