@@ -1,5 +1,5 @@
 """
-modes/chorus_challenge.py — Chorus Challenge Mode.
+modes/chord_challenge.py — Chorus Challenge Mode.
 
 The player is shown a chord (e.g. "C Major Chord is C E G") and must press
 all the required notes simultaneously.  When the correct pitch-classes are all

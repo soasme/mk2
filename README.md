@@ -481,9 +481,9 @@ The number of notes in each sequence is configurable (default 3):
 n_notes = 3
 ```
 
-### Chorus Challenge Mode — chord ear training
+### Chord Challenge Mode — chord ear training
 
-Chorus Challenge Mode is a chord ear-training game. The synthesizer announces a chord (e.g. *"C Major Chord is C, E, G"*) and you must press all the named notes simultaneously.
+Chord Challenge Mode is a chord ear-training game. The synthesizer announces a chord (e.g. *"C Major Chord is C, E, G"*) and you must press all the named notes simultaneously.
 
 **Enter the mode:** Hold **KeySelect** (Scene Down), press **Pad 16**, then **Pad 2**, then release KeySelect.
 

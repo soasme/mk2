@@ -17,7 +17,7 @@ import tomllib
 from dataclasses import dataclass
 import mido
 import fluidsynth
-from modes import note_challenge, chorus_challenge
+from modes import note_challenge, chord_challenge
 from modes import loop_mode
 
 DEBUG = os.environ.get('DEBUG') == '1'
@@ -257,10 +257,10 @@ def make_input_state(ch_keys, ch_pads, n_notes=4):
         'note_challenge_entry': parse_entry_pads('16,1'),  # (digits, bank_sep, bank_digits)
         'note_challenge_captured': set(),  # pad notes consumed by the mode
         # Chorus Challenge Mode
-        'chorus_challenge_active': False,
-        'chorus_challenge_held': set(),
-        'chorus_challenge_entry': parse_entry_pads('16,2'),
-        'chorus_challenge_current_chord': None,  # (display_name, tts_text, pitch_classes)
+        'chord_challenge_active': False,
+        'chord_challenge_held': set(),
+        'chord_challenge_entry': parse_entry_pads('16,2'),
+        'chord_challenge_current_chord': None,  # (display_name, tts_text, pitch_classes)
         # Loop Mode
         'loop_mode_active': False,
         'loop_mode_entry': parse_entry_pads('16,3'),
@@ -347,11 +347,11 @@ def parse_events(msg, state):
                           f"(target: {note_challenge.note_names_display(target)}, {hits}/{n} trailing match)")
 
             # Chorus Challenge Mode: track held notes and check for chord match
-            if state['chorus_challenge_active'] and msg.channel == state['ch_keys']:
-                state['chorus_challenge_held'].add(msg.note)
-                held = frozenset(state['chorus_challenge_held'])
-                chord = state['chorus_challenge_current_chord']
-                if chord and chorus_challenge.check_chord(held, chord[2]):
+            if state['chord_challenge_active'] and msg.channel == state['ch_keys']:
+                state['chord_challenge_held'].add(msg.note)
+                held = frozenset(state['chord_challenge_held'])
+                chord = state['chord_challenge_current_chord']
+                if chord and chord_challenge.check_chord(held, chord[2]):
                     events.append(ChorusChallengeSuccessEvent())
                 else:
                     events.append(ChorusChallengeNoteChangedEvent(held=held))
@@ -376,8 +376,8 @@ def parse_events(msg, state):
             ch = state['current_keys_channel'] if msg.channel == state['ch_keys'] else msg.channel
             events.append(NoteOffEvent(ch, msg.note))
             # Chorus Challenge Mode: update held notes
-            if state['chorus_challenge_active'] and msg.channel == state['ch_keys']:
-                state['chorus_challenge_held'].discard(msg.note)
+            if state['chord_challenge_active'] and msg.channel == state['ch_keys']:
+                state['chord_challenge_held'].discard(msg.note)
 
             # Loop Mode: buffer note_off during recording
             if state['loop_mode_recording']:
@@ -449,7 +449,7 @@ def parse_events(msg, state):
                 key_select_channel = state['key_select_channel']
                 # Configured pad sequence: toggle Note Challenge Mode
                 e_digits, e_bank_sep, e_bank_digits = state['note_challenge_entry']
-                cc_digits, cc_bank_sep, cc_bank_digits = state['chorus_challenge_entry']
+                cc_digits, cc_bank_sep, cc_bank_digits = state['chord_challenge_entry']
                 lm_digits, lm_bank_sep, lm_bank_digits = state['loop_mode_entry']
                 if (digits == e_digits
                         and state['key_select_bank_sep'] == e_bank_sep
@@ -461,7 +461,7 @@ def parse_events(msg, state):
                 elif (digits == cc_digits
                         and state['key_select_bank_sep'] == cc_bank_sep
                         and bank_digits == cc_bank_digits):
-                    if state['chorus_challenge_active']:
+                    if state['chord_challenge_active']:
                         events.append(ExitChorusChallengeEvent())
                     else:
                         events.append(EnterChorusChallengeEvent())
@@ -627,32 +627,32 @@ def handle_event(event, fs, ch_keys, ch_pads, sfid, state):
             note_challenge.play_notes_async(t, ch_keys, fs)
         threading.Thread(target=_bingo_then_play, daemon=True).start()
     elif isinstance(event, EnterChorusChallengeEvent):
-        state['chorus_challenge_active'] = True
-        state['chorus_challenge_held'] = set()
-        chord = chorus_challenge.random_chord()
-        state['chorus_challenge_current_chord'] = chord
+        state['chord_challenge_active'] = True
+        state['chord_challenge_held'] = set()
+        chord = chord_challenge.random_chord()
+        state['chord_challenge_current_chord'] = chord
         print(f"Chorus Challenge Mode: active — {chord[0]}")
-        def _start_chorus(c=chord):
+        def _start_chord(c=chord):
             speak("Chorus Challenge Mode", wait=True)
             speak(c[1])
-        threading.Thread(target=_start_chorus, daemon=True).start()
+        threading.Thread(target=_start_chord, daemon=True).start()
     elif isinstance(event, ExitChorusChallengeEvent):
-        state['chorus_challenge_active'] = False
-        state['chorus_challenge_held'] = set()
-        state['chorus_challenge_current_chord'] = None
+        state['chord_challenge_active'] = False
+        state['chord_challenge_held'] = set()
+        state['chord_challenge_current_chord'] = None
         print("Chorus Challenge Mode: exited")
         speak("Goodbye")
     elif isinstance(event, ChorusChallengeNoteChangedEvent):
         pass  # Could add visual feedback here in the future
     elif isinstance(event, ChorusChallengeSuccessEvent):
-        state['chorus_challenge_held'] = set()
-        old_chord = state['chorus_challenge_current_chord']
-        chord = chorus_challenge.random_chord(exclude=old_chord[0] if old_chord else None)
-        state['chorus_challenge_current_chord'] = chord
+        state['chord_challenge_held'] = set()
+        old_chord = state['chord_challenge_current_chord']
+        chord = chord_challenge.random_chord(exclude=old_chord[0] if old_chord else None)
+        state['chord_challenge_current_chord'] = chord
         print(f"Chorus Challenge Mode: correct! Next — {chord[0]}")
         # Play chord sound (like note challenge bingo)
         if old_chord:
-            chorus_challenge.play_chord_async(old_chord[2], ch_keys, fs)
+            chord_challenge.play_chord_async(old_chord[2], ch_keys, fs)
         bingo_sound = state.get('note_challenge_bingo_sound')
         def _success_then_next(c=chord, sound=bingo_sound):
             if sound:
@@ -813,7 +813,7 @@ def main():
     midi_cfg      = cfg.get('midi', {})
     synth_cfg     = cfg.get('synth', {})
     challenge_cfg = cfg.get('note_challenge', {})
-    cc_cfg        = cfg.get('chorus_challenge', {})
+    cc_cfg        = cfg.get('chord_challenge', {})
     lm_cfg        = cfg.get('loop_mode', {})
 
     port    = midi_cfg.get('port', 'Launchkey Mini LK Mini MIDI')
@@ -862,7 +862,7 @@ def main():
     state['note_challenge_min'] = challenge_cfg.get('note_min', 48)
     state['note_challenge_max'] = challenge_cfg.get('note_max', 72)
     state['note_challenge_entry'] = parse_entry_pads(challenge_cfg.get('entry_pads', '16,1'))
-    state['chorus_challenge_entry'] = parse_entry_pads(cc_cfg.get('entry_pads', '16,2'))
+    state['chord_challenge_entry'] = parse_entry_pads(cc_cfg.get('entry_pads', '16,2'))
     state['loop_mode_entry'] = parse_entry_pads(lm_cfg.get('entry_pads', '16,3'))
     n_tracks = int(lm_cfg.get('n_tracks', 4))
     state['loop_mode_n_tracks'] = n_tracks
