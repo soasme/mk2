@@ -13,7 +13,8 @@ import threading
 import time
 
 # Chromatic note names (display and TTS-friendly)
-_NOTE_NAMES = ['C', 'C sharp', 'D', 'D sharp', 'E', 'F', 'F sharp', 'G', 'G sharp', 'A.', 'A. sharp', 'B']
+# A-G letters are spoken via pre-recorded WAVs by speak(), so no trailing-dot hack needed.
+_NOTE_NAMES = ['C', 'C sharp', 'D', 'D sharp', 'E', 'F', 'F sharp', 'G', 'G sharp', 'A', 'A sharp', 'B']
 _NOTE_DISPLAY = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 
 # Chord type definitions: (quality_name, intervals_from_root)
@@ -30,10 +31,11 @@ def _build_chords():
     chords = []
     for root in range(12):
         root_name = _NOTE_NAMES[root]
+        root_display = _NOTE_DISPLAY[root]
         for quality, intervals in _CHORD_TYPES:
             pcs = frozenset((root + i) % 12 for i in intervals)
             note_names = [_NOTE_NAMES[(root + i) % 12] for i in intervals]
-            display = f'{root_name} {quality}'
+            display = f'{root_display} {quality}'
             chord_tts = f'{root_name} {quality}'
             chords.append((display, chord_tts, note_names, pcs))
     return chords

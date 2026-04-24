@@ -20,7 +20,8 @@ import time
 # MIDI note → chromatic name (display)
 _NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 
-# TTS-friendly names (no '#' symbol which some TTS engines read as "hash")
+# TTS-friendly names (no '#' symbol; A-G letters are spoken via pre-recorded WAVs
+# so they don't need the trailing-dot hack used by the macOS `say` fallback).
 _NOTE_NAMES_TTS = [
     'C', 'C sharp', 'D', 'D sharp', 'E',
     'F', 'F sharp', 'G', 'G sharp', 'A', 'A sharp', 'B',

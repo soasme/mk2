@@ -8,7 +8,6 @@ Event flow:
 """
 import os
 import pathlib
-import re
 import subprocess
 import sys
 import threading
@@ -22,6 +21,15 @@ from modes import loop_mode
 
 DEBUG = os.environ.get('DEBUG') == '1'
 SAY_INSTRUMENT = os.environ.get('SAY_INSTRUMENT') == '1'
+
+# Directory containing pre-recorded letter WAV files (A.wav … G.wav)
+_ASSETS_ALPHABET = pathlib.Path(__file__).parent / 'assets' / 'alphabet'
+# Directory containing pre-recorded phrase WAV files (sharp.wav, Major.wav, etc.)
+_ASSETS_PHRASES = pathlib.Path(__file__).parent / 'assets' / 'phrases'
+# Note letters that have a dedicated WAV file
+_LETTER_WAV_NOTES = frozenset('ABCDEFG')
+# Qualifiers that must play immediately after the preceding token (no gap).
+_GLUE_TOKENS = frozenset({'sharp', 'flat', 'Major', 'Minor', 'Augmented', 'Diminished'})
 
 # GM program names, 0-indexed (bank 0 melodic, bank 128 percussion)
 GM_MELODIC = [
@@ -504,19 +512,94 @@ def parse_events(msg, state):
 # App events → synth
 # ---------------------------------------------------------------------------
 
+def _wav_for(text: str) -> pathlib.Path | None:
+    """Return the pre-recorded WAV path for *text*, or None if not cached.
+
+    Lookup order:
+      1. assets/phrases/<sanitised>.wav  — multi-word phrases and qualifiers
+      2. assets/alphabet/<LETTER>.wav    — single note letters A-G
+    The sanitised filename replaces spaces with underscores, preserving case.
+    """
+    # Exact phrase match (spaces → underscores)
+    phrase_wav = _ASSETS_PHRASES / f"{text.replace(' ', '_')}.wav"
+    if phrase_wav.exists():
+        return phrase_wav
+    # Single letter note
+    if len(text) == 1 and text.upper() in _LETTER_WAV_NOTES:
+        letter_wav = _ASSETS_ALPHABET / f"{text.upper()}.wav"
+        if letter_wav.exists():
+            return letter_wav
+    return None
+
+
+def _concat_wavs(paths: list) -> pathlib.Path:
+    """Concatenate multiple WAV files into a single temp file using ffmpeg."""
+    import tempfile
+    tmp = pathlib.Path(tempfile.mktemp(suffix='.wav'))
+    # Build ffmpeg concat filter
+    inputs = []
+    for p in paths:
+        inputs += ['-i', str(p)]
+    n = len(paths)
+    filter_str = ''.join(f'[{i}:a]' for i in range(n)) + f'concat=n={n}:v=0:a=1[out]'
+    subprocess.run(
+        ['ffmpeg', '-y', *inputs, '-filter_complex', filter_str, '-map', '[out]', str(tmp)],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True,
+    )
+    return tmp
+
+
 def speak(text, wait=False):
+    """Play pre-recorded WAVs for all spoken text.
+
+    The text is matched against the assets/phrases/ and assets/alphabet/
+    caches.  Multi-token phrases are tried first as a whole, then token
+    by token.
+
+    Glue tokens (sharp, flat) are concatenated with the preceding token
+    into a single WAV so they play with no gap between them.
+
+    Any token without a cached WAV is silently logged and skipped —
+    no runtime TTS engine is invoked.
+
+    To add new phrases, run scripts/compile_audio.py and commit the WAVs.
+    """
     if not SAY_INSTRUMENT:
         return
-    try:
-        if sys.platform == 'darwin':
-            cmd = ['say', normalize_say_text(text)]
+
+    # Try the whole string as a single cached phrase first
+    wav = _wav_for(text)
+    if wav:
+        play_sound(wav, wait=wait)
+        return
+
+    # Build a list of (wav_path | None) per token, then group glue tokens
+    # with their predecessor for gapless playback.
+    tokens = text.split()
+    resolved = []
+    for token in tokens:
+        wav = _wav_for(token)
+        if wav is None:
+            print(f"speak: no WAV cached for '{token}' (in '{text}') — skipping")
+        resolved.append((token, wav))
+
+    # Group: merge glue tokens onto the preceding entry
+    groups = []  # list of [wav, ...] to play as one unit
+    for token, wav in resolved:
+        if wav is None:
+            continue
+        if token in _GLUE_TOKENS and groups:
+            groups[-1].append(wav)
         else:
-            cmd = ['espeak', text]
-        proc = subprocess.Popen(cmd)
-        if wait:
-            proc.wait()
-    except Exception as e:
-        print(f"Warning: TTS failed: {e}")
+            groups.append([wav])
+
+    for i, group in enumerate(groups):
+        is_last = (i == len(groups) - 1)
+        if len(group) == 1:
+            play_sound(group[0], wait=(wait and is_last) or not is_last)
+        else:
+            merged = _concat_wavs(group)
+            play_sound(merged, wait=(wait and is_last) or not is_last)
 
 
 def speak_chord_cue(chord, pause: float = 1.0) -> None:
@@ -529,11 +612,6 @@ def speak_chord_cue(chord, pause: float = 1.0) -> None:
     for note in chord[2]:
         time.sleep(pause)
         speak(note, wait=True)
-
-
-def normalize_say_text(text: str) -> str:
-    """Make standalone A speak as a letter on macOS `say`."""
-    return re.sub(r'\bA\b', 'A.', text)
 
 
 def play_sound(path, wait=False):
