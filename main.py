@@ -549,8 +549,36 @@ def _concat_wavs(paths: list) -> pathlib.Path:
     return tmp
 
 
+def _say_fallback(text: str, wait: bool = False) -> None:
+    """Speak *text* using the system TTS engine (say on macOS, espeak on Linux).
+
+    Used as a fallback for tokens that have no pre-recorded WAV asset.
+    """
+    if sys.platform == 'darwin':
+        engine = 'say'
+        cmd = [engine, text]
+    else:
+        engine = None
+        for candidate in ('espeak-ng', 'espeak'):
+            try:
+                subprocess.run([candidate, '--version'], capture_output=True, check=True)
+                engine = candidate
+                break
+            except (FileNotFoundError, subprocess.CalledProcessError):
+                pass
+        if engine is None:
+            print(f"speak: no WAV and no TTS engine for '{text}' — skipping")
+            return
+        cmd = [engine, text]
+
+    if wait:
+        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    else:
+        subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
 def speak(text, wait=False):
-    """Play pre-recorded WAVs for all spoken text.
+    """Play pre-recorded WAVs for spoken text, falling back to system TTS.
 
     The text is matched against the assets/phrases/ and assets/alphabet/
     caches.  Multi-token phrases are tried first as a whole, then token
@@ -559,10 +587,11 @@ def speak(text, wait=False):
     Glue tokens (sharp, flat) are concatenated with the preceding token
     into a single WAV so they play with no gap between them.
 
-    Any token without a cached WAV is silently logged and skipped —
-    no runtime TTS engine is invoked.
+    Tokens without a cached WAV are spoken via the system TTS engine
+    (say on macOS, espeak on Linux) so nothing is silently dropped.
 
-    To add new phrases, run scripts/compile_audio.py and commit the WAVs.
+    To add new phrases (and avoid runtime TTS), run scripts/compile_audio.py
+    and commit the WAVs.
     """
     if not SAY_INSTRUMENT:
         return
@@ -579,26 +608,29 @@ def speak(text, wait=False):
     resolved = []
     for token in tokens:
         wav = _wav_for(token)
-        if wav is None:
-            print(f"speak: no WAV cached for '{token}' (in '{text}') — skipping")
         resolved.append((token, wav))
 
-    # Group: merge glue tokens onto the preceding entry
-    groups = []  # list of [wav, ...] to play as one unit
+    # Group: merge glue tokens onto the preceding entry.
+    # Tokens without a WAV are spoken via system TTS individually.
+    # Each entry is either ('wav', [wav_path, ...]) or ('tts', token_str).
+    groups = []
     for token, wav in resolved:
         if wav is None:
-            continue
-        if token in _GLUE_TOKENS and groups:
-            groups[-1].append(wav)
+            groups.append(('tts', token))
+        elif token in _GLUE_TOKENS and groups and groups[-1][0] == 'wav':
+            groups[-1][1].append(wav)
         else:
-            groups.append([wav])
+            groups.append(('wav', [wav]))
 
     for i, group in enumerate(groups):
         is_last = (i == len(groups) - 1)
-        if len(group) == 1:
-            play_sound(group[0], wait=(wait and is_last) or not is_last)
+        kind = group[0]
+        if kind == 'tts':
+            _say_fallback(group[1], wait=(wait and is_last))
+        elif len(group[1]) == 1:
+            play_sound(group[1][0], wait=(wait and is_last) or not is_last)
         else:
-            merged = _concat_wavs(group)
+            merged = _concat_wavs(group[1])
             play_sound(merged, wait=(wait and is_last) or not is_last)
 
 
