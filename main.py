@@ -610,13 +610,18 @@ def speak(text, wait=False):
         wav = _wav_for(token)
         resolved.append((token, wav))
 
-    # Group: merge glue tokens onto the preceding entry.
-    # Tokens without a WAV are spoken via system TTS individually.
-    # Each entry is either ('wav', [wav_path, ...]) or ('tts', token_str).
+    # Group tokens into runs of WAV-playable entries and TTS-fallback entries.
+    # Consecutive TTS tokens are merged into a single phrase so they are
+    # spoken by one system-TTS call (no overlap / simultaneous playback).
+    # Each entry is either ('wav', [wav_path, ...]) or ('tts', phrase_str).
     groups = []
     for token, wav in resolved:
         if wav is None:
-            groups.append(('tts', token))
+            if groups and groups[-1][0] == 'tts':
+                # Append to the running TTS phrase
+                groups[-1] = ('tts', groups[-1][1] + ' ' + token)
+            else:
+                groups.append(('tts', token))
         elif token in _GLUE_TOKENS and groups and groups[-1][0] == 'wav':
             groups[-1][1].append(wav)
         else:
