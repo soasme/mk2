@@ -16,7 +16,7 @@ import tomllib
 from dataclasses import dataclass
 import mido
 import fluidsynth
-from modes import note_challenge, chord_challenge
+from modes import note_challenge, chord_challenge, chord_progression
 from modes import loop_mode
 
 DEBUG = os.environ.get('DEBUG') == '1'
@@ -185,6 +185,18 @@ class ChordChallengeSuccessEvent:
     pass
 
 @dataclass
+class EnterChordProgressionEvent:
+    pass
+
+@dataclass
+class ExitChordProgressionEvent:
+    pass
+
+@dataclass
+class ChordProgressionKeyEvent:
+    note: int
+
+@dataclass
 class EnterLoopModeEvent:
     pass
 
@@ -269,6 +281,11 @@ def make_input_state(ch_keys, ch_pads, n_notes=4):
         'chord_challenge_held': set(),
         'chord_challenge_entry': parse_entry_pads('16,2'),
         'chord_challenge_current_chord': None,  # (display_name, tts_text, pitch_classes)
+        # Chord Progression Mode
+        'chord_progression_active': False,
+        'chord_progression_entry': parse_entry_pads('16,5'),
+        'chord_progression_stop_event': None,
+        'chord_progression_current_key': None,
         # Loop Mode
         'loop_mode_active': False,
         'loop_mode_entry': parse_entry_pads('16,3'),
@@ -363,6 +380,11 @@ def parse_events(msg, state):
                     events.append(ChordChallengeSuccessEvent())
                 else:
                     events.append(ChordChallengeNoteChangedEvent(held=held))
+
+            # Chord Progression Mode: key press triggers a progression
+            if (state['chord_progression_active'] and msg.channel == state['ch_keys']
+                    and chord_progression.PROGRESSION_MIN <= msg.note <= chord_progression.PROGRESSION_MAX):
+                events.append(ChordProgressionKeyEvent(note=msg.note))
 
             # Loop Mode: buffer note events during recording
             if state['loop_mode_recording']:
@@ -459,6 +481,7 @@ def parse_events(msg, state):
                 e_digits, e_bank_sep, e_bank_digits = state['note_challenge_entry']
                 cc_digits, cc_bank_sep, cc_bank_digits = state['chord_challenge_entry']
                 lm_digits, lm_bank_sep, lm_bank_digits = state['loop_mode_entry']
+                cp_digits, cp_bank_sep, cp_bank_digits = state['chord_progression_entry']
                 if (digits == e_digits
                         and state['key_select_bank_sep'] == e_bank_sep
                         and bank_digits == e_bank_digits):
@@ -480,6 +503,13 @@ def parse_events(msg, state):
                         events.append(ExitLoopModeEvent())
                     else:
                         events.append(EnterLoopModeEvent())
+                elif (digits == cp_digits
+                        and state['key_select_bank_sep'] == cp_bank_sep
+                        and bank_digits == cp_bank_digits):
+                    if state['chord_progression_active']:
+                        events.append(ExitChordProgressionEvent())
+                    else:
+                        events.append(EnterChordProgressionEvent())
                 elif (not digits and not state['key_select_bank_sep']
                         and not bank_digits and state['loop_mode_active']):
                     events.append(LoopModePlaybackToggleEvent())
@@ -788,6 +818,40 @@ def handle_event(event, fs, ch_keys, ch_pads, sfid, state):
                 speak("Correct", wait=True)
             speak_chord_cue(c)
         threading.Thread(target=_success_then_next, daemon=True).start()
+    elif isinstance(event, EnterChordProgressionEvent):
+        state['chord_progression_active'] = True
+        state['chord_progression_current_key'] = None
+        if state['chord_progression_stop_event'] is not None:
+            state['chord_progression_stop_event'].set()
+            state['chord_progression_stop_event'] = None
+        print("Chord Progression Mode: active")
+        threading.Thread(target=lambda: speak("Chord Progression Mode"), daemon=True).start()
+    elif isinstance(event, ExitChordProgressionEvent):
+        state['chord_progression_active'] = False
+        if state['chord_progression_stop_event'] is not None:
+            state['chord_progression_stop_event'].set()
+            state['chord_progression_stop_event'] = None
+        state['chord_progression_current_key'] = None
+        print("Chord Progression Mode: exited")
+        speak("Goodbye")
+    elif isinstance(event, ChordProgressionKeyEvent):
+        note = event.note
+        # Stop previous loop
+        if state['chord_progression_stop_event'] is not None:
+            state['chord_progression_stop_event'].set()
+        stop_ev = threading.Event()
+        state['chord_progression_stop_event'] = stop_ev
+        state['chord_progression_current_key'] = note
+        prog_entry = chord_progression.PROGRESSIONS.get(note)
+        if prog_entry:
+            name, chords = prog_entry
+            print(f"Chord Progression Mode: key={note} progression={name}")
+            threading.Thread(
+                target=lambda c=chords, s=stop_ev: (
+                    chord_progression.play_progression_loop(c, ch_keys, fs, s)
+                ),
+                daemon=True,
+            ).start()
     elif isinstance(event, EnterLoopModeEvent):
         # Stop any existing playback
         for i, stop_ev in enumerate(state['loop_mode_play_stop_events']):
