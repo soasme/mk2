@@ -48,6 +48,7 @@ PHRASES = {
     'Note Challenge Mode': 'Note_Challenge_Mode',
     'Chord Challenge Mode':'Chord_Challenge_Mode',
     'Loop Mode':           'Loop_Mode',
+    'Chord Progression Mode': 'Chord_Progression_Mode',
     # Feedback
     'Bingo':               'Bingo',
     'Correct':             'Correct',
